@@ -34,8 +34,8 @@ export function CalorieHero({
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 flex items-center justify-center"
       >
-        <div className="bg-primary/[0.14] dark:bg-primary/[0.18] size-80 rounded-full blur-3xl" />
-        <div className="bg-primary/10 dark:bg-primary/[0.15] absolute size-52 rounded-full blur-2xl" />
+        <div className="bg-primary/14 dark:bg-primary/18 size-80 rounded-full blur-3xl" />
+        <div className="bg-primary/10 dark:bg-primary/15 absolute size-52 rounded-full blur-2xl" />
       </div>
 
       <div className="relative">
