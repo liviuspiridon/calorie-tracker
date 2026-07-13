@@ -19,3 +19,12 @@ export function formatRelativeTime(iso: string): string {
   const diffDay = Math.round(diffHr / 24);
   return `${diffDay}d ago`;
 }
+
+/** True if two dates fall on the same calendar day (local time). */
+export function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}

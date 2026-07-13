@@ -19,8 +19,8 @@ export type NavItem = {
  * Sidebar (desktop) and sheet menu (mobile) both render from this list.
  */
 export const mainNav: NavItem[] = [
-  { title: "Dashboard", href: "/", icon: LayoutDashboard },
+  { title: "Today", href: "/", icon: LayoutDashboard },
   { title: "Health", href: "/health", icon: HeartPulse, status: "soon" },
-  { title: "Meals", href: "/meals", icon: UtensilsCrossed, status: "soon" },
+  { title: "Meals", href: "/meals", icon: UtensilsCrossed },
   { title: "Home", href: "/home", icon: House, status: "soon" },
 ];
