@@ -52,9 +52,12 @@ export function EditTargetsSheet({
           <SheetTitle>Daily targets</SheetTitle>
           <SheetDescription>What being on track is measured against.</SheetDescription>
         </SheetHeader>
-        <div className="space-y-4 px-4 pb-4">
-          <div className="space-y-1.5">
-            <label htmlFor="target-calories" className="text-sm font-medium">
+        <div className="space-y-5 px-4 pb-6">
+          <div className="space-y-2">
+            <label
+              htmlFor="target-calories"
+              className="text-muted-foreground text-xs font-medium tracking-[0.12em] uppercase"
+            >
               Calories
             </label>
             <Input
@@ -64,10 +67,14 @@ export function EditTargetsSheet({
               min={1}
               value={calories}
               onChange={(event) => setCalories(event.target.value)}
+              className="h-11"
             />
           </div>
-          <div className="space-y-1.5">
-            <label htmlFor="target-protein" className="text-sm font-medium">
+          <div className="space-y-2">
+            <label
+              htmlFor="target-protein"
+              className="text-muted-foreground text-xs font-medium tracking-[0.12em] uppercase"
+            >
               Protein (g)
             </label>
             <Input
@@ -77,10 +84,11 @@ export function EditTargetsSheet({
               min={1}
               value={protein}
               onChange={(event) => setProtein(event.target.value)}
+              className="h-11"
             />
           </div>
-          <SheetFooter className="px-0 pt-0">
-            <Button onClick={handleSave} className="w-full">
+          <SheetFooter className="px-0 pt-2">
+            <Button onClick={handleSave} className="h-12 w-full rounded-full text-sm font-medium">
               Save
             </Button>
           </SheetFooter>

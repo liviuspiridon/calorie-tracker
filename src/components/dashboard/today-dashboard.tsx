@@ -46,9 +46,9 @@ export function TodayDashboard() {
   }
 
   return (
-    <div className="mx-auto flex max-w-lg flex-col gap-8 pb-8">
+    <div className="mx-auto flex max-w-lg flex-col pb-10">
       <header className="flex items-start justify-between">
-        <div className="space-y-0.5">
+        <div className="space-y-1">
           <p className="text-muted-foreground text-sm font-medium">
             {now.toLocaleDateString(undefined, {
               weekday: "long",
@@ -56,16 +56,16 @@ export function TodayDashboard() {
               day: "numeric",
             })}
           </p>
-          <h1 className="text-4xl font-semibold tracking-tight">Today</h1>
+          <h1 className="text-4xl leading-tight font-semibold tracking-tight">Today</h1>
         </div>
         <Button
           variant="ghost"
           size="icon"
           onClick={() => setEditTargetsOpen(true)}
           aria-label="Edit daily targets"
-          className="mt-1"
+          className="text-muted-foreground mt-1 rounded-full"
         >
-          <Settings2Icon />
+          <Settings2Icon className="size-[18px]" />
         </Button>
       </header>
 
@@ -75,16 +75,26 @@ export function TodayDashboard() {
         calorieTarget={targets.calories}
       />
 
-      <ProteinProgress consumed={proteinConsumed} target={targets.protein} />
+      <div className="mt-6">
+        <ProteinProgress consumed={proteinConsumed} target={targets.protein} />
+      </div>
 
-      <NextAction message={nextAction} />
+      <div className="mt-10">
+        <NextAction message={nextAction} />
+      </div>
 
-      <Button size="lg" className="w-full" onClick={() => setLogMealOpen(true)}>
-        <PlusIcon />
+      <Button
+        size="lg"
+        className="mt-5 h-12 w-full rounded-full text-sm font-medium"
+        onClick={() => setLogMealOpen(true)}
+      >
+        <PlusIcon className="size-4" />
         Log meal
       </Button>
 
-      <TodaysMeals meals={todaysMeals} />
+      <div className="mt-14">
+        <TodaysMeals meals={todaysMeals} />
+      </div>
 
       <LogMealSheet open={logMealOpen} onOpenChange={setLogMealOpen} onSave={handleSaveMeal} />
       <EditTargetsSheet

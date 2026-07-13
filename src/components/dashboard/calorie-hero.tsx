@@ -9,7 +9,11 @@ const STATUS_TONE_CLASSES: Record<string, string> = {
   destructive: "bg-destructive/10 text-destructive",
 };
 
-/** The screen's centerpiece — deliberately no card, no border, maximum whitespace. */
+/**
+ * The screen's centerpiece. No card, no border — separation comes from an
+ * ambient color wash and whitespace, not a box. Numeral weight is medium,
+ * not bold: large + confident reads calmer than large + heavy.
+ */
 export function CalorieHero({
   status,
   caloriesConsumed,
@@ -25,24 +29,28 @@ export function CalorieHero({
   const statusCopy = DAY_STATUS_COPY[status];
 
   return (
-    <div className="relative flex flex-col items-center gap-5 py-6">
+    <div className="relative flex flex-col items-center gap-6 py-8">
       <div
         aria-hidden="true"
-        className="bg-primary/10 dark:bg-primary/15 absolute top-1/2 left-1/2 size-72 -translate-x-1/2 -translate-y-1/2 rounded-full blur-3xl"
-      />
+        className="pointer-events-none absolute inset-0 flex items-center justify-center"
+      >
+        <div className="bg-primary/[0.14] dark:bg-primary/[0.18] size-80 rounded-full blur-3xl" />
+        <div className="bg-primary/10 dark:bg-primary/[0.15] absolute size-52 rounded-full blur-2xl" />
+      </div>
 
       <div className="relative">
         <ProgressRing
           progress={progress}
-          size={272}
-          strokeWidth={18}
+          size={280}
+          strokeWidth={15}
+          trackClassName="stroke-muted/60"
           indicatorClassName={isOver ? "stroke-destructive" : "stroke-primary"}
         />
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-6xl font-semibold tracking-tight tabular-nums">
+          <span className="text-7xl leading-none font-medium tracking-tighter tabular-nums">
             {caloriesRemaining.toLocaleString()}
           </span>
-          <span className="text-muted-foreground mt-1.5 text-sm tracking-wide">
+          <span className="text-muted-foreground mt-3 text-xs font-medium tracking-[0.12em] uppercase">
             {isOver ? "kcal over" : "kcal left"}
           </span>
         </div>
