@@ -1,28 +1,27 @@
 import type { MealLogEntry } from "@/features/meal-logging/types";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatTime } from "@/lib/utils";
 
+/** A small logbook, not a stat card — fixed time column reads like a timetable. */
 export function TodaysMeals({ meals }: { meals: MealLogEntry[] }) {
   return (
-    <section className="space-y-5">
+    <section>
       <h2 className="text-muted-foreground text-xs font-medium tracking-[0.12em] uppercase">
         Meals today
       </h2>
       {meals.length === 0 ? (
-        <p className="text-muted-foreground text-sm">Nothing logged yet today.</p>
+        <p className="text-muted-foreground mt-4 text-sm">Nothing logged yet today.</p>
       ) : (
-        <ul className="divide-border/70 divide-y">
+        <ul className="divide-border/70 mt-4 divide-y">
           {meals.map((meal) => (
             <li
               key={meal.id}
-              className="flex items-center justify-between gap-4 py-4 first:pt-0"
+              className="grid grid-cols-[4.5rem_1fr_auto] items-center gap-3 py-4"
             >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{meal.analysis.description}</p>
-                <p className="text-muted-foreground mt-0.5 text-xs">
-                  {formatRelativeTime(meal.loggedAt)}
-                </p>
-              </div>
-              <span className="text-muted-foreground shrink-0 text-sm tabular-nums">
+              <span className="text-muted-foreground text-xs tabular-nums">
+                {formatTime(meal.loggedAt)}
+              </span>
+              <span className="truncate text-sm font-medium">{meal.analysis.description}</span>
+              <span className="text-muted-foreground text-sm tabular-nums">
                 {meal.analysis.calories} kcal
               </span>
             </li>

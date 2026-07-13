@@ -20,6 +20,11 @@ export function formatRelativeTime(iso: string): string {
   return `${diffDay}d ago`;
 }
 
+/** Absolute local time for a log entry, e.g. "8:42 AM". */
+export function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 /** True if two dates fall on the same calendar day (local time). */
 export function isSameDay(a: Date, b: Date): boolean {
   return (

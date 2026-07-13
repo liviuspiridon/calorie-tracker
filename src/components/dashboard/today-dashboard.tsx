@@ -11,10 +11,9 @@ import type { MealLogEntry } from "@/features/meal-logging/types";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { cn, isSameDay } from "@/lib/utils";
 
-import { CalorieHero } from "./calorie-hero";
 import { EditTargetsSheet } from "./edit-targets-sheet";
 import { NextAction } from "./next-action";
-import { ProteinProgress } from "./protein-progress";
+import { TodayStats } from "./today-stats";
 import { TodaysMeals } from "./todays-meals";
 
 const EASE = "ease-[cubic-bezier(0.23,1,0.32,1)]";
@@ -54,11 +53,11 @@ export function TodayDashboard() {
   }
 
   /**
-   * Staggered entrance for content below the hero. Returned as spreadable
-   * props onto a plain wrapper `<div>` — never merge these classes directly
-   * onto a `<Button>`, since twMerge would collapse its own
-   * `transition-[...]` property list into this one and wreck its press
-   * feedback timing.
+   * Staggered entrance for content below the headline/numbers. Spread onto
+   * a plain wrapper `<div>`, never merged directly onto a `<Button>` — see
+   * the note this cost us once already: twMerge collapses conflicting
+   * `transition-[...]` property lists, which would wreck the button's own
+   * press-feedback timing.
    */
   function revealProps(delayMs: number, extraClassName?: string) {
     return {
@@ -73,65 +72,53 @@ export function TodayDashboard() {
   }
 
   return (
-    <div className="pb-10">
-      {/* Hero zone — the one dramatic moment on the screen. */}
-      <div className="bg-linear-to-b from-primary/16 via-primary/5 to-background dark:from-primary/22 dark:via-primary/8 mx-auto max-w-3xl rounded-[2rem] px-6 pt-8 pb-10 sm:px-10">
-        <div className="mx-auto max-w-lg">
-          <header className="mb-8 flex items-start justify-between">
-            <div className="space-y-1">
-              <p className="text-muted-foreground text-sm font-medium">
-                {now.toLocaleDateString(undefined, {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </p>
-              <h1 className="text-5xl leading-tight font-semibold tracking-tight">Today</h1>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setEditTargetsOpen(true)}
-              aria-label="Edit daily targets"
-              className="text-muted-foreground mt-1 rounded-full"
-            >
-              <Settings2Icon className="size-[18px]" />
-            </Button>
-          </header>
+    <div className="mx-auto max-w-lg pb-10">
+      <header className="flex items-start justify-between">
+        <p className="text-lg font-medium">
+          {now.toLocaleDateString(undefined, {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+          })}
+        </p>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setEditTargetsOpen(true)}
+          aria-label="Edit daily targets"
+          className="text-muted-foreground rounded-full"
+        >
+          <Settings2Icon className="size-[18px]" />
+        </Button>
+      </header>
 
-          <CalorieHero
-            status={status}
-            caloriesConsumed={caloriesConsumed}
-            calorieTarget={targets.calories}
-            revealed={revealed}
-          />
-        </div>
+      <div className="mt-8">
+        <TodayStats
+          status={status}
+          caloriesConsumed={caloriesConsumed}
+          calorieTarget={targets.calories}
+          proteinConsumed={proteinConsumed}
+          proteinTarget={targets.protein}
+        />
       </div>
 
-      {/* Supporting content — calm, quiet, cascades in after the hero settles. */}
-      <div className="mx-auto max-w-lg px-4 sm:px-0">
-        <div {...revealProps(80, "mt-10")}>
-          <ProteinProgress consumed={proteinConsumed} target={targets.protein} />
-        </div>
+      <div {...revealProps(80, "mt-10")}>
+        <NextAction message={nextAction} />
+      </div>
 
-        <div {...revealProps(140, "mt-10")}>
-          <NextAction message={nextAction} />
-        </div>
+      <div {...revealProps(140, "mt-4")}>
+        <Button
+          size="lg"
+          className="h-12 rounded-full px-6 text-sm font-medium"
+          onClick={() => setLogMealOpen(true)}
+        >
+          <PlusIcon className="size-4" />
+          Log meal
+        </Button>
+      </div>
 
-        <div {...revealProps(180, "mt-5")}>
-          <Button
-            size="lg"
-            className="h-12 w-full rounded-full text-sm font-medium"
-            onClick={() => setLogMealOpen(true)}
-          >
-            <PlusIcon className="size-4" />
-            Log meal
-          </Button>
-        </div>
-
-        <div {...revealProps(220, "mt-14")}>
-          <TodaysMeals meals={todaysMeals} />
-        </div>
+      <div {...revealProps(200, "mt-16")}>
+        <TodaysMeals meals={todaysMeals} />
       </div>
 
       <LogMealSheet open={logMealOpen} onOpenChange={setLogMealOpen} onSave={handleSaveMeal} />
