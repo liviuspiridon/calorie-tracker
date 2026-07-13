@@ -1,9 +1,7 @@
 /**
- * Port for AI meal logging.
- *
- * The eventual adapter will send a photo and/or text description to a vision
- * LLM and get back a structured estimate. Keep the model/provider choice
- * behind this interface.
+ * Shared meal-logging domain shapes. The analysis pipeline itself —
+ * MealAnalysisService -> AIProvider -> ClaudeProvider — lives in ./server
+ * and @/lib/ai; this file only holds the data shapes both ends agree on.
  */
 export interface MealAnalysis {
   description: string;
@@ -20,8 +18,4 @@ export interface MealLogEntry {
   analysis: MealAnalysis;
   photoUrl?: string;
   note?: string;
-}
-
-export interface MealAnalyzer {
-  analyze(input: { photo?: Blob; text?: string }): Promise<MealAnalysis>;
 }
