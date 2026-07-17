@@ -74,3 +74,19 @@ export function getNextAction({
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+
+export type DayLogLevel = "under-target" | "at-target" | "over-target";
+
+/**
+ * Classifies a day's *total* calories against target — for the calendar's
+ * day coloring, where the day is already over (unlike computeDayStatus,
+ * which reasons about pacing through a day still in progress). Deliberately
+ * an exact three-way comparison (<, ===, >), not a percentage band — note
+ * that means "at-target" only fires on exact equality, which real summed
+ * calorie totals will rarely hit; almost everything lands in under/over.
+ */
+export function classifyDayLog(caloriesConsumed: number, calorieTarget: number): DayLogLevel {
+  if (caloriesConsumed < calorieTarget) return "under-target";
+  if (caloriesConsumed === calorieTarget) return "at-target";
+  return "over-target";
+}

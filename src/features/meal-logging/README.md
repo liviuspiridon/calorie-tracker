@@ -29,8 +29,10 @@ LogMealSheet (client)
   is the concrete (currently stubbed) adapter. Shared with the AI coach when
   that lands. See `src/lib/ai/README.md`.
 
-Persistence is `localStorage` (`useLocalStorage`, keyed `balance:meal-log`),
-scoped to `MealLogEntry` from `types.ts`.
+Persistence is Supabase (`use-meal-log.ts` → `data.ts` → the `meals`
+table; see `supabase/schema.sql`). Mutators write to the database first and
+update local state only on success. `confidence`/`note`/`photoUrl` are
+session-only — the table has no columns for them.
 
 Next steps, in order:
 
@@ -40,6 +42,6 @@ Next steps, in order:
   final-shaped.
 - Photo input as a second compose mode alongside text (`AIProvider` doesn't
   care; this is a UI + prompt-construction change in `meal-analysis-service.ts`).
-- Server-side persistence once meals need to be visible across devices, not
-  just the logging browser. Map to the shared `MetricSample`
-  (`kind: "calories_in"`) so the dashboard can aggregate across sources.
+- Persist `confidence`/`note`/`photo_url` if they turn out to matter beyond
+  the logging session — the ALTER TABLE lives commented in
+  `supabase/schema.sql`; only `data.ts` needs to change.

@@ -9,13 +9,19 @@ export interface MealAnalysis {
   protein: number;
   carbs: number;
   fat: number;
-  confidence: "low" | "medium" | "high";
+  /**
+   * Set on freshly-analyzed meals; the meals table has no confidence column,
+   * so it doesn't survive a reload. Absent means "unknown", and the UI hides
+   * the badge rather than inventing a value.
+   */
+  confidence?: "low" | "medium" | "high";
 }
 
 export interface MealLogEntry {
   id: string;
   loggedAt: string;
   analysis: MealAnalysis;
+  /** Session-only, like confidence: no matching columns in the meals table. */
   photoUrl?: string;
   note?: string;
 }

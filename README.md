@@ -18,10 +18,11 @@ integrations — see their feature READMEs.
 - **next-themes** for dark / light / system mode
 - **ESLint 9 (flat config) + Prettier** (with the Tailwind class-sorting plugin)
 
-No database, no auth, no deployment infra yet — everything currently
-persists to `localStorage`. That's a deliberate choice, not an oversight:
-infrastructure gets added when a feature actually needs it, not ahead of
-time. See `src/features/*/README.md` for what each feature still needs.
+Persistence is **Supabase** (Postgres, browser client + anon key, no auth
+session — see `supabase/schema.sql` and `src/lib/supabase.ts`). There's
+still no auth or deployment infra: infrastructure gets added when a feature
+actually needs it, not ahead of time. See `src/features/*/README.md` for
+what each feature still needs.
 
 ## Getting started
 

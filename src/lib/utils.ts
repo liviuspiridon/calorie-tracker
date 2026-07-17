@@ -20,11 +20,6 @@ export function formatRelativeTime(iso: string): string {
   return `${diffDay}d ago`;
 }
 
-/** Absolute local time for a log entry, e.g. "8:42 AM". */
-export function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-}
-
 /** True if two dates fall on the same calendar day (local time). */
 export function isSameDay(a: Date, b: Date): boolean {
   return (
@@ -32,4 +27,17 @@ export function isSameDay(a: Date, b: Date): boolean {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
   );
+}
+
+const SHORT_MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
+
+/** "Today, 14 Jul" if `selected` is `today`, else "Tue, 15 Jul". */
+export function formatHeaderDate(selected: Date, today: Date): string {
+  const day = selected.getDate();
+  const month = SHORT_MONTHS[selected.getMonth()];
+  if (isSameDay(selected, today)) return `Today, ${day} ${month}`;
+  const weekday = selected.toLocaleDateString(undefined, { weekday: "short" });
+  return `${weekday}, ${day} ${month}`;
 }

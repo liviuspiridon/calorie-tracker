@@ -6,18 +6,18 @@ import { PlusIcon, UtensilsCrossed } from "lucide-react";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useLocalStorage } from "@/hooks/use-local-storage";
 import { formatRelativeTime } from "@/lib/utils";
 
 import { LogMealSheet } from "./log-meal-sheet";
 import type { MealLogEntry } from "../types";
+import { useMealLog } from "../use-meal-log";
 
 export function MealLogger() {
-  const [meals, setMeals] = useLocalStorage<MealLogEntry[]>("balance:meal-log", []);
+  const { meals, status, saveMeal } = useMealLog();
   const [sheetOpen, setSheetOpen] = React.useState(false);
 
   function handleSave(entry: MealLogEntry) {
-    setMeals((prev) => [entry, ...prev]);
+    saveMeal(entry).catch((error) => console.error("Failed to save meal", error));
   }
 
   return (
@@ -30,7 +30,7 @@ export function MealLogger() {
         </Button>
       </div>
 
-      {meals.length === 0 ? (
+      {status !== "ready" ? null : meals.length === 0 ? (
         <EmptyState
           icon={UtensilsCrossed}
           title="No meals logged yet"
