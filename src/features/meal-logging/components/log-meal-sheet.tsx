@@ -156,7 +156,7 @@ export function LogMealSheet({
             <p className="mt-3 text-[11.5px] font-medium" style={{ color: TODAY.ink45 }}>
               Describe it in your own words — Coach reads the macros and you confirm.
             </p>
-            <div className="mt-[18px] flex items-center gap-2.5">
+            <div className="mt-[18px] flex items-center gap-1.5 sm:gap-2.5">
               <ComposerModePill
                 icon={
                   <span className="text-[13px] font-bold" style={{ color: TODAY.ink }}>
@@ -281,7 +281,8 @@ function ComposerModePill({
     <button
       type="button"
       disabled={disabled}
-      className={`flex items-center gap-2 rounded-[14px] px-[15px] py-[11px] text-xs font-semibold ${
+      aria-label={label}
+      className={`flex items-center gap-2 rounded-[14px] px-3 py-[11px] text-xs font-semibold sm:px-[15px] ${
         disabled ? "pointer-events-none cursor-not-allowed" : ""
       }`}
       style={{ background: TODAY.chip2, color: TODAY.ink55 }}
@@ -291,13 +292,19 @@ function ComposerModePill({
         button (and therefore the badge below, a sibling outside this
         wrapper) stays at full opacity, so "SOON" reads crisp and
         high-contrast instead of fading along with the dimmed icon/label.
+
+        Below sm the text label is hidden (icon + badge only): the three
+        pills plus the submit button don't fit a 375px viewport at full
+        size, and the row previously forced horizontal scrolling. The
+        aria-label above keeps the accessible name when the visible label
+        is display:none.
       */}
       <span className={`flex items-center gap-2 ${disabled ? "opacity-40" : ""}`}>
         {icon}
-        {label}
+        <span className="hidden sm:inline">{label}</span>
       </span>
       {badge && (
-        <span className="ml-1.5 rounded-md bg-white px-1.5 py-0.5 text-[8px] font-bold tracking-widest text-neutral-900 uppercase shadow-sm">
+        <span className="rounded-md bg-white px-1.5 py-0.5 text-[8px] font-bold tracking-widest text-neutral-900 uppercase shadow-sm sm:ml-1.5">
           {badge}
         </span>
       )}
