@@ -132,6 +132,15 @@ export function LogMealSheet({
             <textarea
               value={text}
               onChange={(event) => setText(event.target.value)}
+              onKeyDown={(event) => {
+                // Plain Enter submits; Shift+Enter keeps inserting a newline.
+                // isComposing guards IME input (e.g. Japanese), where Enter
+                // confirms the composition rather than submitting.
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  void handleAnalyze();
+                }
+              }}
               placeholder="e.g. 200g grilled chicken with rice and vegetables"
               rows={4}
               disabled={flow.step === "analyzing"}
