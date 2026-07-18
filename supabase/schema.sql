@@ -51,6 +51,28 @@ create policy "anon full access to daily_targets"
   using (true)
   with check (true);
 
+-- Daily Apple Health metrics, synced by an iOS Shortcut posting to
+-- /api/metrics (bearer-token auth — see METRICS_WEBHOOK_TOKEN in
+-- .env.example). One row per calendar day, upserted on date. user_id is
+-- null for now — Balance is single-user with no auth; the column exists so
+-- a future multi-user shape doesn't need a migration.
+create table if not exists daily_metrics (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid,
+  date date not null unique,
+  active_calories numeric,
+  weight numeric,
+  updated_at timestamptz not null default now()
+);
+
+alter table daily_metrics enable row level security;
+
+create policy "anon full access to daily_metrics"
+  on daily_metrics for all
+  to anon
+  using (true)
+  with check (true);
+
 -- Optional: the app also captures confidence / note / photo per meal during
 -- logging, but drops them on save because these columns don't exist. To
 -- persist them, run this and extend toRow/toEntry in

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { formatLocalDate } from "@/lib/utils";
 
 import type { MealLogEntry } from "./types";
 
@@ -20,14 +21,6 @@ interface MealRow {
   fat: number;
 }
 
-/** Local-time YYYY-MM-DD, matching how the UI bins meals into days (isSameDay is local too). */
-function toLocalDateString(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 function toEntry(row: MealRow): MealLogEntry {
   return {
     id: row.id,
@@ -46,7 +39,7 @@ function toRow(entry: MealLogEntry): MealRow {
   return {
     id: entry.id,
     created_at: entry.loggedAt,
-    date: toLocalDateString(new Date(entry.loggedAt)),
+    date: formatLocalDate(new Date(entry.loggedAt)),
     description: entry.analysis.description,
     calories: entry.analysis.calories,
     protein: entry.analysis.protein,

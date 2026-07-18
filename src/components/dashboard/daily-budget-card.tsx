@@ -5,31 +5,41 @@ import { useCountUp } from "@/hooks/use-count-up";
 import { TODAY } from "@/lib/today-theme";
 
 /**
- * The hero surface from the approved design. The reference shows a 3-segment
- * meter (eaten / remaining / "+420 workout bonus"), but Balance has no
- * activity-tracking data source yet (no Apple Health integration) — the
- * bonus segment would be fabricated, so this renders only the two segments
- * backed by real data. The structure is ready for a third segment whenever
- * that data genuinely exists.
+ * The hero surface from the approved design, including its third "activity
+ * bonus" meter segment — originally omitted because Balance had no activity
+ * data source, now backed by real Apple Health syncs (daily_metrics via
+ * /api/metrics). The day's budget is base target + active calories; the
+ * bonus segment renders only when a sync actually reported activity.
  */
 export function DailyBudgetCard({
   caloriesConsumed,
   calorieTarget,
+  activeCalories,
   proteinConsumed,
   proteinTarget,
 }: {
   caloriesConsumed: number;
+  /** Base daily target — activity raises the effective budget on top of it. */
   calorieTarget: number;
+  activeCalories: number;
   proteinConsumed: number;
   proteinTarget: number;
 }) {
-  const isOver = caloriesConsumed > calorieTarget;
-  const caloriesRemaining = Math.max(0, calorieTarget - caloriesConsumed);
-  const caloriesOver = Math.max(0, caloriesConsumed - calorieTarget);
+  const effectiveTarget = calorieTarget + activeCalories;
+  const isOver = caloriesConsumed > effectiveTarget;
+  const caloriesRemaining = Math.max(0, effectiveTarget - caloriesConsumed);
+  const caloriesOver = Math.max(0, caloriesConsumed - effectiveTarget);
   const calorieDisplay = useCountUp(isOver ? caloriesOver : caloriesRemaining);
 
-  const eatenPct = calorieTarget > 0 ? Math.min(1, caloriesConsumed / calorieTarget) * 100 : 0;
-  const remainingPct = 100 - eatenPct;
+  const eatenPct =
+    effectiveTarget > 0 ? Math.min(1, caloriesConsumed / effectiveTarget) * 100 : 0;
+  // The bonus sits at the right end of the track; once eating digs into it,
+  // it shrinks before the base "remaining" does.
+  const bonusPct =
+    effectiveTarget > 0
+      ? Math.min((activeCalories / effectiveTarget) * 100, 100 - eatenPct)
+      : 0;
+  const remainingPct = Math.max(0, 100 - eatenPct - bonusPct);
   const proteinPct = proteinTarget > 0 ? Math.min(1, proteinConsumed / proteinTarget) * 100 : 0;
 
   return (
@@ -77,10 +87,20 @@ export function DailyBudgetCard({
             style={{
               width: `${remainingPct}%`,
               background: TODAY.accent,
-              borderRadius: "2px 8px 8px 2px",
+              borderRadius: bonusPct > 0 ? "2px" : "2px 8px 8px 2px",
             }}
             className="transition-[width] duration-700 ease-out"
           />
+          {bonusPct > 0 && (
+            <div
+              style={{
+                width: `${bonusPct}%`,
+                background: "rgba(199,240,74,0.45)",
+                borderRadius: "2px 8px 8px 2px",
+              }}
+              className="transition-[width] duration-700 ease-out"
+            />
+          )}
         </div>
         {/*
           Deliberately not positioned under the bar via a dynamic `left`
@@ -95,11 +115,19 @@ export function DailyBudgetCard({
           >
             {caloriesConsumed.toLocaleString()} consumed
           </span>
+          {activeCalories > 0 && (
+            <span
+              className="font-mono text-[10px] font-medium tabular-nums"
+              style={{ color: TODAY.accentInk }}
+            >
+              +{activeCalories.toLocaleString()} active
+            </span>
+          )}
           <span
             className="font-mono text-[10px] font-medium tabular-nums"
             style={{ color: TODAY.ink45 }}
           >
-            {calorieTarget.toLocaleString()} kcal goal
+            {effectiveTarget.toLocaleString()} kcal goal
           </span>
         </div>
       </div>

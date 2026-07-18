@@ -20,6 +20,14 @@ export function formatRelativeTime(iso: string): string {
   return `${diffDay}d ago`;
 }
 
+/** Local-time YYYY-MM-DD — the app's canonical day key (matches isSameDay's local-time binning). */
+export function formatLocalDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 /** True if two dates fall on the same calendar day (local time). */
 export function isSameDay(a: Date, b: Date): boolean {
   return (

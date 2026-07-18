@@ -6,11 +6,12 @@ import { ChevronDownIcon, EllipsisIcon } from "lucide-react";
 import { computeDayStatus, getNextAction } from "@/features/goals/lib/daily-progress";
 import type { DailyTargets } from "@/features/goals/types";
 import { useDailyTargets } from "@/features/goals/use-daily-targets";
+import { useDailyMetrics } from "@/features/health/use-daily-metrics";
 import { LogMealSheet } from "@/features/meal-logging/components/log-meal-sheet";
 import type { MealLogEntry } from "@/features/meal-logging/types";
 import { useMealLog } from "@/features/meal-logging/use-meal-log";
 import { TODAY, TODAY_FONT } from "@/lib/today-theme";
-import { cn, formatHeaderDate, isSameDay } from "@/lib/utils";
+import { cn, formatHeaderDate, formatLocalDate, isSameDay } from "@/lib/utils";
 
 import { CalendarSheet } from "./calendar-sheet";
 import { DailyBudgetCard } from "./daily-budget-card";
@@ -61,14 +62,20 @@ export function TodayDashboard() {
   const caloriesConsumed = selectedDateMeals.reduce((sum, meal) => sum + meal.analysis.calories, 0);
   const proteinConsumed = selectedDateMeals.reduce((sum, meal) => sum + meal.analysis.protein, 0);
 
+  // Apple Health metrics for the viewed day (synced via /api/metrics).
+  // Activity raises the day's calorie budget: base + active - consumed.
+  const metrics = useDailyMetrics(formatLocalDate(selectedDate));
+  const activeCalories = Math.round(metrics?.activeCalories ?? 0);
+  const effectiveCalorieTarget = targets.calories + activeCalories;
+
   // computeDayStatus/getNextAction reason about pacing through a day still
   // in progress (time-of-day fraction) — not meaningful for a past,
   // completed date, so they only run while viewing today.
   const nextAction = isViewingToday
     ? getNextAction({
-        status: computeDayStatus({ caloriesConsumed, calorieTarget: targets.calories, now }),
+        status: computeDayStatus({ caloriesConsumed, calorieTarget: effectiveCalorieTarget, now }),
         mealsLoggedToday: selectedDateMeals.length,
-        caloriesRemaining: Math.max(0, targets.calories - caloriesConsumed),
+        caloriesRemaining: Math.max(0, effectiveCalorieTarget - caloriesConsumed),
         proteinRemaining: Math.max(0, targets.protein - proteinConsumed),
       })
     : null;
@@ -190,6 +197,7 @@ export function TodayDashboard() {
               <DailyBudgetCard
                 caloriesConsumed={caloriesConsumed}
                 calorieTarget={targets.calories}
+                activeCalories={activeCalories}
                 proteinConsumed={proteinConsumed}
                 proteinTarget={targets.protein}
               />
