@@ -2,6 +2,14 @@ export interface AICompletionRequest {
   /** Sets the model's role/behavior — separate from the user-facing prompt. */
   system?: string;
   prompt: string;
+  /**
+   * JSON Schema the response text must conform to. Providers with
+   * structured-output support enforce it server-side (Gemini via
+   * `responseJsonSchema`, Claude via `output_config.format`); the concept
+   * itself is provider-portable, so this stays in the vendor-neutral
+   * contract.
+   */
+  jsonSchema?: Record<string, unknown>;
 }
 
 export interface AICompletionResponse {

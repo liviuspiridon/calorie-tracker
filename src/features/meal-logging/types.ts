@@ -1,6 +1,6 @@
 /**
  * Shared meal-logging domain shapes. The analysis pipeline itself —
- * MealAnalysisService -> AIProvider -> ClaudeProvider — lives in ./server
+ * MealAnalysisService -> AIProvider -> GeminiProvider — lives in ./server
  * and @/lib/ai; this file only holds the data shapes both ends agree on.
  */
 export interface MealAnalysis {

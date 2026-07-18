@@ -2,15 +2,36 @@ import type { AIProvider } from "@/lib/ai/provider";
 
 import type { MealAnalysis } from "../types";
 
-const SYSTEM_PROMPT = `You are a nutrition analyst. Given a short, informal description of a meal, estimate its nutrition.
+const SYSTEM_PROMPT = `You are a nutrition analyst for a personal calorie-tracking app. Given a short, informal meal description, estimate realistic nutrition totals for the whole meal.
 
-Respond with ONLY a JSON object — no prose, no markdown — matching exactly:
-{"description": string, "calories": number, "protein": number, "carbs": number, "fat": number, "confidence": "low" | "medium" | "high"}`;
+Guidelines:
+- Use typical portion sizes when quantities aren't given.
+- description: a concise, cleaned-up restatement of the meal — keep the user's wording where it's already clear.
+- calories/protein/carbs/fat: whole-meal totals (kcal and grams), rounded to integers.
+- confidence: "high" when foods and quantities are specific, "medium" when portions had to be assumed, "low" when the description is vague or ambiguous.`;
+
+/**
+ * Enforced server-side via structured outputs — the model's response is
+ * guaranteed to match this shape. Mirrors MealAnalysis in ../types.
+ */
+const MEAL_ANALYSIS_SCHEMA = {
+  type: "object",
+  properties: {
+    description: { type: "string", description: "Concise cleaned-up name of the meal" },
+    calories: { type: "integer", description: "Estimated total kcal for the whole meal" },
+    protein: { type: "integer", description: "Total protein in grams" },
+    carbs: { type: "integer", description: "Total carbohydrates in grams" },
+    fat: { type: "integer", description: "Total fat in grams" },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+  },
+  required: ["description", "calories", "protein", "carbs", "fat", "confidence"],
+  additionalProperties: false,
+} as const;
 
 /**
  * Meal-analysis domain logic: builds the prompt, calls the AI provider,
  * defensively parses whatever comes back into `MealAnalysis`. Depends only
- * on `AIProvider` — swapping `ClaudeProvider` for a different implementation,
+ * on `AIProvider` — swapping `GeminiProvider` for a different implementation,
  * or a different vendor entirely, never touches this file.
  */
 export class MealAnalysisService {
@@ -25,6 +46,7 @@ export class MealAnalysisService {
     const response = await this.aiProvider.complete({
       system: SYSTEM_PROMPT,
       prompt: trimmed,
+      jsonSchema: { ...MEAL_ANALYSIS_SCHEMA },
     });
 
     return parseAnalysis(response.text, trimmed);
