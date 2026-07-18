@@ -6,31 +6,34 @@ import { TODAY } from "@/lib/today-theme";
 
 /** Fixed daily calorie deficit visualized at the right end of the meter. */
 const TARGET_DEFICIT_KCAL = 550;
-/** Segments narrower than this hide their value label entirely. */
+/** Blocks narrower than this hide their value label entirely. */
 const HIDE_LABEL_BELOW_PCT = 4;
-/** Below this width, the available segment's label flips above the bar. */
-const FLIP_AVAILABLE_BELOW_PCT = 12;
+/** Below this width, the middle block's remaining label flips above the bar. */
+const FLIP_REMAINING_BELOW_PCT = 12;
 
 /**
- * The hero surface: headline countdown, the 4-segment budget meter, and the
+ * The hero surface: headline countdown, the 3-block budget meter, and the
  * protein row.
  *
- * Meter model (left to right): consumed (ink) | available base budget
- * (accent lime) | training bonus from Apple Health (olive) | fixed target
- * deficit (pale lime). The bar's total is base + active + deficit, and
- * over-eating erodes segments right-to-left semantics-first: available
- * shrinks first, then the training bonus, then the planned deficit.
+ * Meter model (left to right, gap-separated): consumed (ink) | remaining
+ * (one continuous hybrid block: available base budget in lime flowing into
+ * the training bonus in olive via a hard-stop gradient — no internal gap) |
+ * fixed target deficit (pale lime). The bar's total is base + active +
+ * deficit; over-eating erodes right-to-left: available first, then the
+ * training bonus, then the planned deficit.
  *
- * Value labels sit below the bar, centered on their segment. Two
- * anti-collision rules: the training value always renders above the bar so
- * it never competes for space below, and the available value flips above
- * once its segment narrows past FLIP_AVAILABLE_BELOW_PCT. Any label whose
- * segment is near zero-width hides. (This replaces the old static
- * justify-between meta row — per-segment centering needs dynamic `left`
- * offsets, and the flip/hide rules are what keep them collision-free.)
+ * Labels: consumed and deficit values center below their blocks. The middle
+ * block's below-label is the TOTAL remaining (base remaining + training
+ * remaining) — by construction the same value as the big headline. The
+ * "+N kcal" active badge sits above the bar, centered on the olive
+ * sub-segment. Anti-collision: when the middle block narrows past
+ * FLIP_REMAINING_BELOW_PCT its label flips above (and the active badge
+ * yields — at that width the two would overlap, and the flipped total
+ * already is mostly the training remainder). Near-zero blocks hide their
+ * labels.
  *
- * The deficit is visualization only — the headline "kcal left" number and
- * all pacing math still treat base + active as the eatable budget.
+ * The deficit is visualization only — the headline and pacing math still
+ * treat base + active as the eatable budget.
  */
 export function DailyBudgetCard({
   caloriesConsumed,
@@ -58,51 +61,88 @@ export function DailyBudgetCard({
   const overBase = Math.max(0, caloriesConsumed - calorieTarget);
   const overTraining = Math.max(0, overBase - activeCalories);
 
-  const segments = [
+  const consumedKcal = Math.min(caloriesConsumed, envelope);
+  const availableKcal = Math.max(0, calorieTarget - caloriesConsumed);
+  const trainingKcal = Math.max(0, activeCalories - overBase);
+  // availableKcal + trainingKcal === caloriesRemaining, so the middle
+  // block's label always matches the headline exactly.
+  const deficitKcal = Math.max(0, TARGET_DEFICIT_KCAL - overTraining);
+
+  const toPct = (kcal: number) => (kcal / envelope) * 100;
+  const consumedPct = toPct(consumedKcal);
+  const remainingPct = toPct(caloriesRemaining);
+  const trainingPct = toPct(trainingKcal);
+  const deficitPct = toPct(deficitKcal);
+
+  // Where the lime available part hands over to the olive training part,
+  // as a fraction of the middle block itself (drives the gradient split).
+  const trainingSplitPct =
+    caloriesRemaining > 0 ? (availableKcal / caloriesRemaining) * 100 : 0;
+
+  const remainingFlipsAbove =
+    remainingPct >= HIDE_LABEL_BELOW_PCT && remainingPct < FLIP_REMAINING_BELOW_PCT;
+
+  const blocks = [
     {
       key: "consumed",
-      kcal: Math.min(caloriesConsumed, envelope),
-      color: TODAY.ink,
-      labelColor: TODAY.ink40,
-      prefix: "",
+      pct: consumedPct,
+      background: TODAY.ink,
     },
     {
-      key: "available",
-      kcal: Math.max(0, calorieTarget - caloriesConsumed),
-      color: TODAY.accent,
-      labelColor: TODAY.ink45,
-      prefix: "",
-    },
-    {
-      key: "training",
-      kcal: Math.max(0, activeCalories - overBase),
-      color: TODAY.accentInk,
-      labelColor: TODAY.accentInk,
-      prefix: "+",
+      key: "remaining",
+      pct: remainingPct,
+      background: `linear-gradient(to right, ${TODAY.accent} 0%, ${TODAY.accent} ${trainingSplitPct}%, ${TODAY.accentInk} ${trainingSplitPct}%, ${TODAY.accentInk} 100%)`,
     },
     {
       key: "deficit",
-      kcal: Math.max(0, TARGET_DEFICIT_KCAL - overTraining),
-      color: TODAY.todayHighlight,
-      labelColor: TODAY.ink40,
-      prefix: "",
+      pct: deficitPct,
+      background: TODAY.todayHighlight,
     },
   ];
+  const bars = blocks.filter((block) => block.pct > 0.1);
 
-  let offset = 0;
-  const meter = segments.map((segment) => {
-    const pct = (segment.kcal / envelope) * 100;
-    const center = clampPct(offset + pct / 2);
-    offset += pct;
-    return {
-      ...segment,
-      pct,
-      center,
-      placement: labelPlacement(segment.key, pct),
-      label: `${segment.prefix}${Math.round(segment.kcal).toLocaleString()} kcal`,
-    };
-  });
-  const bars = meter.filter((segment) => segment.pct > 0.1);
+  const belowLabels = [
+    {
+      key: "consumed",
+      show: consumedPct >= HIDE_LABEL_BELOW_PCT,
+      center: clampPct(consumedPct / 2),
+      color: TODAY.ink40,
+      text: `${Math.round(consumedKcal).toLocaleString()} kcal`,
+    },
+    {
+      key: "remaining",
+      show: remainingPct >= FLIP_REMAINING_BELOW_PCT,
+      center: clampPct(consumedPct + remainingPct / 2),
+      color: TODAY.ink45,
+      text: `${Math.round(caloriesRemaining).toLocaleString()} kcal`,
+    },
+    {
+      key: "deficit",
+      show: deficitPct >= HIDE_LABEL_BELOW_PCT,
+      center: clampPct(consumedPct + remainingPct + deficitPct / 2),
+      color: TODAY.ink40,
+      text: `${Math.round(deficitKcal).toLocaleString()} kcal`,
+    },
+  ].filter((label) => label.show);
+
+  const aboveLabels = [
+    // The active badge, centered on the olive sub-segment. It yields when
+    // the remaining label flips up — at that width they'd overlap.
+    {
+      key: "training",
+      show: trainingPct >= HIDE_LABEL_BELOW_PCT && !remainingFlipsAbove,
+      center: clampPct(consumedPct + toPct(availableKcal) + trainingPct / 2),
+      color: TODAY.accentInk,
+      text: `+${Math.round(trainingKcal).toLocaleString()} kcal`,
+    },
+    {
+      key: "remaining-flipped",
+      show: remainingFlipsAbove,
+      center: clampPct(consumedPct + remainingPct / 2),
+      color: TODAY.ink45,
+      text: `${Math.round(caloriesRemaining).toLocaleString()} kcal`,
+    },
+  ].filter((label) => label.show);
 
   return (
     <div
@@ -143,27 +183,25 @@ export function DailyBudgetCard({
         {/* Both label rails keep a fixed height even when empty, so a flip
             never shifts the card's vertical rhythm. */}
         <div className="relative mb-[6px] h-[13px]">
-          {meter
-            .filter((segment) => segment.placement === "above")
-            .map((segment) => (
-              <span
-                key={segment.key}
-                className="absolute -translate-x-1/2 font-mono text-[10px] font-medium whitespace-nowrap tabular-nums transition-[left] duration-700 ease-out"
-                style={{ left: `${segment.center}%`, color: segment.labelColor }}
-              >
-                {segment.label}
-              </span>
-            ))}
+          {aboveLabels.map((label) => (
+            <span
+              key={label.key}
+              className="absolute -translate-x-1/2 font-mono text-[10px] font-medium whitespace-nowrap tabular-nums transition-[left] duration-700 ease-out"
+              style={{ left: `${label.center}%`, color: label.color }}
+            >
+              {label.text}
+            </span>
+          ))}
         </div>
 
         <div className="flex h-4 gap-[3px]">
-          {bars.map((segment, index) => (
+          {bars.map((block, index) => (
             <div
-              key={segment.key}
+              key={block.key}
               className="transition-[width] duration-700 ease-out"
               style={{
-                width: `${segment.pct}%`,
-                background: segment.color,
+                width: `${block.pct}%`,
+                background: block.background,
                 borderRadius: segmentRadius(index, bars.length),
               }}
             />
@@ -171,17 +209,15 @@ export function DailyBudgetCard({
         </div>
 
         <div className="relative mt-[6px] h-[13px]">
-          {meter
-            .filter((segment) => segment.placement === "below")
-            .map((segment) => (
-              <span
-                key={segment.key}
-                className="absolute -translate-x-1/2 font-mono text-[10px] font-medium whitespace-nowrap tabular-nums transition-[left] duration-700 ease-out"
-                style={{ left: `${segment.center}%`, color: segment.labelColor }}
-              >
-                {segment.label}
-              </span>
-            ))}
+          {belowLabels.map((label) => (
+            <span
+              key={label.key}
+              className="absolute -translate-x-1/2 font-mono text-[10px] font-medium whitespace-nowrap tabular-nums transition-[left] duration-700 ease-out"
+              style={{ left: `${label.center}%`, color: label.color }}
+            >
+              {label.text}
+            </span>
+          ))}
         </div>
       </div>
 
@@ -212,13 +248,6 @@ export function DailyBudgetCard({
       </div>
     </div>
   );
-}
-
-function labelPlacement(key: string, pct: number): "above" | "below" | "hidden" {
-  if (pct < HIDE_LABEL_BELOW_PCT) return "hidden";
-  if (key === "training") return "above";
-  if (key === "available" && pct < FLIP_AVAILABLE_BELOW_PCT) return "above";
-  return "below";
 }
 
 /** Keeps centered labels from hanging off the card's edges. */
