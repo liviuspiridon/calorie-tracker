@@ -4,6 +4,7 @@ import * as React from "react";
 import { ArrowUpIcon, CameraIcon, Loader2Icon, MicIcon } from "lucide-react";
 
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { TODAY, TODAY_FONT } from "@/lib/today-theme";
 
 import { analyzeMeal } from "../actions";
@@ -22,6 +23,9 @@ const EMPTY_ANALYSIS: MealAnalysis = {
   carbs: 0,
   fat: 0,
 };
+
+/** Recording-state accent for the Voice pill — the app has no red token. */
+const VOICE_RED = "#E5484D";
 
 /**
  * The approved "Balance Today" design only covers the compose step (this is
@@ -50,6 +54,23 @@ export function LogMealSheet({
   const [flow, setFlow] = React.useState<FlowState>({ step: "compose" });
   const [draft, setDraft] = React.useState<MealAnalysis>(EMPTY_ANALYSIS);
 
+  // The textarea value when dictation started — new speech is appended after
+  // it, so a session's transcript re-renders cleanly without duplicating.
+  const voiceBaseRef = React.useRef("");
+  const {
+    isSupported: voiceSupported,
+    isListening,
+    error: voiceError,
+    start: startVoice,
+    stop: stopVoice,
+  } = useSpeechRecognition({
+    lang: "ro-RO",
+    onTranscript: (session) => {
+      const base = voiceBaseRef.current;
+      setText(base && session ? `${base} ${session}` : base + session);
+    },
+  });
+
   React.useEffect(() => {
     if (!open) return;
     if (editingMeal) {
@@ -63,10 +84,26 @@ export function LogMealSheet({
     }
   }, [open, editingMeal]);
 
+  // Dictation only makes sense on the compose step of an open sheet — stop it
+  // if the sheet closes or the flow advances (analyzing/review).
+  React.useEffect(() => {
+    if (!open || flow.step !== "compose") stopVoice();
+  }, [open, flow.step, stopVoice]);
+
   function reset() {
+    stopVoice();
     setText("");
     setFlow({ step: "compose" });
     setDraft(EMPTY_ANALYSIS);
+  }
+
+  function handleToggleVoice() {
+    if (isListening) {
+      stopVoice();
+    } else {
+      voiceBaseRef.current = text.trim();
+      startVoice();
+    }
   }
 
   function handleOpenChange(next: boolean) {
@@ -168,8 +205,10 @@ export function LogMealSheet({
               <ComposerModePill
                 icon={<MicIcon className="size-3.5" />}
                 label="Voice"
-                disabled
-                badge="SOON"
+                onClick={handleToggleVoice}
+                active={isListening}
+                disabled={!voiceSupported || flow.step === "analyzing"}
+                badge={voiceSupported ? undefined : "SOON"}
               />
               <ComposerModePill
                 icon={<CameraIcon className="size-3.5" />}
@@ -193,6 +232,18 @@ export function LogMealSheet({
                 )}
               </button>
             </div>
+            {isListening && (
+              <p className="mt-2 text-[11.5px] font-medium" style={{ color: VOICE_RED }}>
+                Listening in Romanian — tap the mic again to stop.
+              </p>
+            )}
+            {voiceError && (
+              <p className="mt-2 text-[11.5px] font-medium" style={{ color: VOICE_RED }}>
+                {voiceError === "not-allowed" || voiceError === "service-not-allowed"
+                  ? "Microphone access is blocked — enable it in your browser settings."
+                  : "Voice input isn't available right now."}
+              </p>
+            )}
           </div>
         )}
 
@@ -271,27 +322,39 @@ function ComposerModePill({
   label,
   disabled,
   badge,
+  active,
+  onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   disabled?: boolean;
   badge?: string;
+  /** Recording state (Voice pill) — red tint + pulse. */
+  active?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
+      onClick={onClick}
       aria-label={label}
+      aria-pressed={active}
       className={`flex items-center gap-2 rounded-[14px] px-3 py-[11px] text-xs font-semibold sm:px-[15px] ${
         disabled ? "pointer-events-none cursor-not-allowed" : ""
       }`}
-      style={{ background: TODAY.chip2, color: TODAY.ink55 }}
+      style={{
+        background: active ? "rgba(229,72,77,0.12)" : TODAY.chip2,
+        color: active ? VOICE_RED : TODAY.ink55,
+      }}
     >
       {/*
         Opacity lives on this inner wrapper, not the button itself — the
         button (and therefore the badge below, a sibling outside this
         wrapper) stays at full opacity, so "SOON" reads crisp and
         high-contrast instead of fading along with the dimmed icon/label.
+        When active (recording), the same wrapper pulses its opacity for a
+        subtle live-recording cue.
 
         Below sm the text label is hidden (icon + badge only): the three
         pills plus the submit button don't fit a 375px viewport at full
@@ -299,11 +362,15 @@ function ComposerModePill({
         aria-label above keeps the accessible name when the visible label
         is display:none.
       */}
-      <span className={`flex items-center gap-2 ${disabled ? "opacity-40" : ""}`}>
+      <span
+        className={`flex items-center gap-2 ${disabled ? "opacity-40" : ""} ${
+          active ? "animate-pulse" : ""
+        }`}
+      >
         {icon}
         <span className="hidden sm:inline">{label}</span>
       </span>
-      {badge && (
+      {badge && !active && (
         <span className="rounded-md bg-white px-1.5 py-0.5 text-[8px] font-bold tracking-widest text-neutral-900 uppercase shadow-sm sm:ml-1.5">
           {badge}
         </span>
