@@ -4,12 +4,33 @@ import { useCountUp } from "@/hooks/use-count-up";
 
 import { TODAY } from "@/lib/today-theme";
 
+/** Fixed daily calorie deficit visualized at the right end of the meter. */
+const TARGET_DEFICIT_KCAL = 550;
+/** Segments narrower than this hide their value label entirely. */
+const HIDE_LABEL_BELOW_PCT = 4;
+/** Below this width, the available segment's label flips above the bar. */
+const FLIP_AVAILABLE_BELOW_PCT = 12;
+
 /**
- * The hero surface from the approved design, including its third "activity
- * bonus" meter segment — originally omitted because Balance had no activity
- * data source, now backed by real Apple Health syncs (daily_metrics via
- * /api/metrics). The day's budget is base target + active calories; the
- * bonus segment renders only when a sync actually reported activity.
+ * The hero surface: headline countdown, the 4-segment budget meter, and the
+ * protein row.
+ *
+ * Meter model (left to right): consumed (ink) | available base budget
+ * (accent lime) | training bonus from Apple Health (olive) | fixed target
+ * deficit (pale lime). The bar's total is base + active + deficit, and
+ * over-eating erodes segments right-to-left semantics-first: available
+ * shrinks first, then the training bonus, then the planned deficit.
+ *
+ * Value labels sit below the bar, centered on their segment. Two
+ * anti-collision rules: the training value always renders above the bar so
+ * it never competes for space below, and the available value flips above
+ * once its segment narrows past FLIP_AVAILABLE_BELOW_PCT. Any label whose
+ * segment is near zero-width hides. (This replaces the old static
+ * justify-between meta row — per-segment centering needs dynamic `left`
+ * offsets, and the flip/hide rules are what keep them collision-free.)
+ *
+ * The deficit is visualization only — the headline "kcal left" number and
+ * all pacing math still treat base + active as the eatable budget.
  */
 export function DailyBudgetCard({
   caloriesConsumed,
@@ -31,16 +52,57 @@ export function DailyBudgetCard({
   const caloriesOver = Math.max(0, caloriesConsumed - effectiveTarget);
   const calorieDisplay = useCountUp(isOver ? caloriesOver : caloriesRemaining);
 
-  const eatenPct =
-    effectiveTarget > 0 ? Math.min(1, caloriesConsumed / effectiveTarget) * 100 : 0;
-  // The bonus sits at the right end of the track; once eating digs into it,
-  // it shrinks before the base "remaining" does.
-  const bonusPct =
-    effectiveTarget > 0
-      ? Math.min((activeCalories / effectiveTarget) * 100, 100 - eatenPct)
-      : 0;
-  const remainingPct = Math.max(0, 100 - eatenPct - bonusPct);
   const proteinPct = proteinTarget > 0 ? Math.min(1, proteinConsumed / proteinTarget) * 100 : 0;
+
+  const envelope = calorieTarget + activeCalories + TARGET_DEFICIT_KCAL;
+  const overBase = Math.max(0, caloriesConsumed - calorieTarget);
+  const overTraining = Math.max(0, overBase - activeCalories);
+
+  const segments = [
+    {
+      key: "consumed",
+      kcal: Math.min(caloriesConsumed, envelope),
+      color: TODAY.ink,
+      labelColor: TODAY.ink40,
+      prefix: "",
+    },
+    {
+      key: "available",
+      kcal: Math.max(0, calorieTarget - caloriesConsumed),
+      color: TODAY.accent,
+      labelColor: TODAY.ink45,
+      prefix: "",
+    },
+    {
+      key: "training",
+      kcal: Math.max(0, activeCalories - overBase),
+      color: TODAY.accentInk,
+      labelColor: TODAY.accentInk,
+      prefix: "+",
+    },
+    {
+      key: "deficit",
+      kcal: Math.max(0, TARGET_DEFICIT_KCAL - overTraining),
+      color: TODAY.todayHighlight,
+      labelColor: TODAY.ink40,
+      prefix: "",
+    },
+  ];
+
+  let offset = 0;
+  const meter = segments.map((segment) => {
+    const pct = (segment.kcal / envelope) * 100;
+    const center = clampPct(offset + pct / 2);
+    offset += pct;
+    return {
+      ...segment,
+      pct,
+      center,
+      placement: labelPlacement(segment.key, pct),
+      label: `${segment.prefix}${Math.round(segment.kcal).toLocaleString()} kcal`,
+    };
+  });
+  const bars = meter.filter((segment) => segment.pct > 0.1);
 
   return (
     <div
@@ -77,58 +139,49 @@ export function DailyBudgetCard({
         </span>
       </div>
 
-      <div className="mt-8">
-        <div className="relative flex h-4 gap-[3px]">
-          <div
-            style={{ width: `${eatenPct}%`, background: TODAY.ink, borderRadius: "8px 2px 2px 8px" }}
-            className="transition-[width] duration-700 ease-out"
-          />
-          <div
-            style={{
-              width: `${remainingPct}%`,
-              background: TODAY.accent,
-              borderRadius: bonusPct > 0 ? "2px" : "2px 8px 8px 2px",
-            }}
-            className="transition-[width] duration-700 ease-out"
-          />
-          {bonusPct > 0 && (
-            <div
-              style={{
-                width: `${bonusPct}%`,
-                background: "rgba(199,240,74,0.45)",
-                borderRadius: "2px 8px 8px 2px",
-              }}
-              className="transition-[width] duration-700 ease-out"
-            />
-          )}
+      <div className="mt-4">
+        {/* Both label rails keep a fixed height even when empty, so a flip
+            never shifts the card's vertical rhythm. */}
+        <div className="relative mb-[6px] h-[13px]">
+          {meter
+            .filter((segment) => segment.placement === "above")
+            .map((segment) => (
+              <span
+                key={segment.key}
+                className="absolute -translate-x-1/2 font-mono text-[10px] font-medium whitespace-nowrap tabular-nums transition-[left] duration-700 ease-out"
+                style={{ left: `${segment.center}%`, color: segment.labelColor }}
+              >
+                {segment.label}
+              </span>
+            ))}
         </div>
-        {/*
-          Deliberately not positioned under the bar via a dynamic `left`
-          offset — eatenPct clamps at 100, so at or past budget that offset
-          collided directly with the right-aligned goal label. A plain
-          justify-between row can't overlap at any value, over budget or not.
-        */}
-        <div className="mt-[11px] flex w-full items-center justify-between">
-          <span
-            className="font-mono text-[10px] font-medium tabular-nums"
-            style={{ color: TODAY.ink40 }}
-          >
-            {caloriesConsumed.toLocaleString()} consumed
-          </span>
-          {activeCalories > 0 && (
-            <span
-              className="font-mono text-[10px] font-medium tabular-nums"
-              style={{ color: TODAY.accentInk }}
-            >
-              +{activeCalories.toLocaleString()} active
-            </span>
-          )}
-          <span
-            className="font-mono text-[10px] font-medium tabular-nums"
-            style={{ color: TODAY.ink45 }}
-          >
-            {effectiveTarget.toLocaleString()} kcal goal
-          </span>
+
+        <div className="flex h-4 gap-[3px]">
+          {bars.map((segment, index) => (
+            <div
+              key={segment.key}
+              className="transition-[width] duration-700 ease-out"
+              style={{
+                width: `${segment.pct}%`,
+                background: segment.color,
+                borderRadius: segmentRadius(index, bars.length),
+              }}
+            />
+          ))}
+        </div>
+
+        <div className="relative mt-[6px] h-[13px]">
+          {meter
+            .filter((segment) => segment.placement === "below")
+            .map((segment) => (
+              <span
+                key={segment.key}
+                className="absolute -translate-x-1/2 font-mono text-[10px] font-medium whitespace-nowrap tabular-nums transition-[left] duration-700 ease-out"
+                style={{ left: `${segment.center}%`, color: segment.labelColor }}
+              >
+                {segment.label}
+              </span>
+            ))}
         </div>
       </div>
 
@@ -159,4 +212,23 @@ export function DailyBudgetCard({
       </div>
     </div>
   );
+}
+
+function labelPlacement(key: string, pct: number): "above" | "below" | "hidden" {
+  if (pct < HIDE_LABEL_BELOW_PCT) return "hidden";
+  if (key === "training") return "above";
+  if (key === "available" && pct < FLIP_AVAILABLE_BELOW_PCT) return "above";
+  return "below";
+}
+
+/** Keeps centered labels from hanging off the card's edges. */
+function clampPct(value: number): number {
+  return Math.min(95, Math.max(5, value));
+}
+
+function segmentRadius(index: number, count: number): string {
+  if (count === 1) return "8px";
+  if (index === 0) return "8px 2px 2px 8px";
+  if (index === count - 1) return "2px 8px 8px 2px";
+  return "2px";
 }
