@@ -3,6 +3,9 @@
 import * as React from "react";
 import { ChevronDownIcon, EllipsisIcon } from "lucide-react";
 
+import { FocusModal } from "@/components/focus/focus-modal";
+import type { FocusInsightRequest } from "@/features/focus/types";
+import { useFocusInsight } from "@/features/focus/use-focus-insight";
 import { computeDayStatus, getNextAction } from "@/features/goals/lib/daily-progress";
 import type { DailyTargets } from "@/features/goals/types";
 import { useDailyTargets } from "@/features/goals/use-daily-targets";
@@ -30,6 +33,9 @@ export function TodayDashboard() {
   const [logMealOpen, setLogMealOpen] = React.useState(false);
   const [editTargetsOpen, setEditTargetsOpen] = React.useState(false);
   const [navDrawerOpen, setNavDrawerOpen] = React.useState(false);
+  const [focusModalOpen, setFocusModalOpen] = React.useState(false);
+  const [focusPayload, setFocusPayload] = React.useState<FocusInsightRequest | null>(null);
+  const { insight: focusInsight, status: focusStatus } = useFocusInsight(focusPayload);
   const [calendarOpen, setCalendarOpen] = React.useState(false);
   const [mealDetailOpen, setMealDetailOpen] = React.useState(false);
   const [activeMeal, setActiveMeal] = React.useState<MealLogEntry | null>(null);
@@ -82,11 +88,54 @@ export function TodayDashboard() {
       })
     : null;
 
+  /**
+   * The Focus Insight is always about the *real* today, never whatever date
+   * is currently being browsed via the calendar — a "log again" while
+   * viewing last week must still reflect on today's actual totals. `meals`
+   * may not yet include `entry` (saveMeal's Supabase round-trip hasn't
+   * resolved when this runs), so it's added explicitly rather than waited on.
+   */
+  function buildFocusInsightPayload(entry: MealLogEntry): FocusInsightRequest {
+    const todaysMeals = meals.filter((meal) => isSameDay(new Date(meal.loggedAt), now));
+    const allTodaysMeals = todaysMeals.some((meal) => meal.id === entry.id)
+      ? todaysMeals
+      : [...todaysMeals, entry];
+    const caloriesConsumedToday = allTodaysMeals.reduce(
+      (sum, meal) => sum + meal.analysis.calories,
+      0,
+    );
+
+    const toMealInput = (meal: MealLogEntry) => ({
+      description: meal.analysis.description,
+      calories: meal.analysis.calories,
+      protein: meal.analysis.protein,
+      carbs: meal.analysis.carbs,
+      fat: meal.analysis.fat,
+    });
+
+    return {
+      caloriesConsumed: caloriesConsumedToday,
+      calorieTarget: targets.calories,
+      localHour: now.getHours(),
+      newItem: toMealInput(entry),
+      meals: allTodaysMeals.map(toMealInput),
+    };
+  }
+
+  function handleFocusModalOpenChange(open: boolean) {
+    setFocusModalOpen(open);
+    if (!open) setFocusPayload(null);
+  }
+
   // Mutators write to Supabase first and update local state on success (see
   // useMealLog). A failed write currently only logs — the sheet has already
   // closed by then and there's no toast surface yet.
-  function handleSaveMeal(entry: MealLogEntry) {
+  function handleSaveMeal(entry: MealLogEntry, isNewEntry: boolean) {
     saveMeal(entry).catch((error) => console.error("Failed to save meal", error));
+    if (isNewEntry) {
+      setFocusPayload(buildFocusInsightPayload(entry));
+      setFocusModalOpen(true);
+    }
   }
 
   function handleSaveTargets(next: DailyTargets) {
@@ -109,12 +158,15 @@ export function TodayDashboard() {
   }
 
   function handleLogAgain(meal: MealLogEntry) {
-    handleSaveMeal({
-      id: crypto.randomUUID(),
-      loggedAt: new Date().toISOString(),
-      analysis: meal.analysis,
-      note: meal.note,
-    });
+    handleSaveMeal(
+      {
+        id: crypto.randomUUID(),
+        loggedAt: new Date().toISOString(),
+        analysis: meal.analysis,
+        note: meal.note,
+      },
+      true,
+    );
     setSelectedDate(now);
   }
 
@@ -244,6 +296,12 @@ export function TodayDashboard() {
         open={navDrawerOpen}
         onOpenChange={setNavDrawerOpen}
         onOpenTargets={() => setEditTargetsOpen(true)}
+      />
+      <FocusModal
+        open={focusModalOpen}
+        onOpenChange={handleFocusModalOpenChange}
+        insight={focusInsight}
+        status={focusStatus}
       />
       <CalendarSheet
         open={calendarOpen}

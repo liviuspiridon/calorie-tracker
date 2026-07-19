@@ -1,3 +1,4 @@
+import { extractJson } from "@/lib/ai/extract-json";
 import type { AIImageInput, AIProvider } from "@/lib/ai/provider";
 
 import type { MealAnalysis } from "../types";
@@ -115,12 +116,6 @@ function parseAnalysis(rawText: string, fallbackDescription: string): MealAnalys
       confidence: "low",
     };
   }
-}
-
-/** Strips any stray prose/markdown fencing a model might wrap JSON in. */
-function extractJson(text: string): string {
-  const match = text.match(/\{[\s\S]*\}/);
-  return match ? match[0] : text;
 }
 
 function toNonNegativeNumber(value: unknown): number {

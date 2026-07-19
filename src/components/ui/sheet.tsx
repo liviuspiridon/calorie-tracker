@@ -45,7 +45,7 @@ function SheetContent({
   showCloseButton = true,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
-  side?: "top" | "right" | "bottom" | "left";
+  side?: "top" | "right" | "bottom" | "left" | "full";
   /** Opt out for sheets that rely solely on backdrop-tap/swipe dismissal. */
   showCloseButton?: boolean;
 }) {
@@ -64,6 +64,10 @@ function SheetContent({
             "data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b",
           side === "bottom" &&
             "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t",
+          // Full-screen takeover: no direction to slide from, so this fades
+          // instead of sliding.
+          side === "full" &&
+            "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 inset-0 h-full w-full",
           className,
         )}
         {...props}

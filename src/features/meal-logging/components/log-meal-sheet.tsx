@@ -48,7 +48,9 @@ export function LogMealSheet({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (entry: MealLogEntry) => void;
+  /** `isNewEntry` is false when this is an edit to an existing meal — the
+   *  caller uses it to decide whether a post-log reflection makes sense. */
+  onSave: (entry: MealLogEntry, isNewEntry: boolean) => void;
   editingMeal?: MealLogEntry | null;
 }) {
   const [text, setText] = React.useState("");
@@ -160,7 +162,7 @@ export function LogMealSheet({
           analysis: draft,
           note: text.trim(),
         };
-    onSave(entry);
+    onSave(entry, !editingMeal);
     reset();
     onOpenChange(false);
   }
