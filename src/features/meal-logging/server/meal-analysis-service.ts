@@ -1,4 +1,4 @@
-import type { AIProvider } from "@/lib/ai/provider";
+import type { AIImageInput, AIProvider } from "@/lib/ai/provider";
 
 import type { MealAnalysis } from "../types";
 
@@ -9,6 +9,18 @@ Guidelines:
 - description: a concise, cleaned-up restatement of the meal — keep the user's wording where it's already clear.
 - calories/protein/carbs/fat: whole-meal totals (kcal and grams), rounded to integers.
 - confidence: "high" when foods and quantities are specific, "medium" when portions had to be assumed, "low" when the description is vague or ambiguous.`;
+
+const PHOTO_SYSTEM_PROMPT = `You are a nutrition analyst for a personal calorie-tracking app, estimating a meal from a photo.
+
+Guidelines:
+- Identify every food and drink visible, and estimate portion sizes/weights from visual cues (plate and utensil size, container volume, height of the pile).
+- description: a concise list of what's on the plate, with your estimated portions — e.g. "Grilled chicken breast (~180g), rice (~150g), mixed salad".
+- calories/protein/carbs/fat: totals for everything visible, rounded to integers.
+- confidence: "high" when foods and portions are clearly readable, "medium" when portions had to be assumed, "low" when the photo is unclear, partially hidden, or may not be food at all.
+- If the image contains no food, return zeros with "low" confidence and say so in the description.`;
+
+const PHOTO_PROMPT =
+  "Analyze this meal photo. Identify the foods, estimate the portion sizes/weights, and report the calories and macros for the whole meal.";
 
 /**
  * Enforced server-side via structured outputs — the model's response is
@@ -50,6 +62,26 @@ export class MealAnalysisService {
     });
 
     return parseAnalysis(response.text, trimmed);
+  }
+
+  /**
+   * Same contract as analyzeMeal, but the meal is described by a photo
+   * instead of words — the returned MealAnalysis feeds the identical review
+   * step, so the user still confirms/edits before anything is saved.
+   */
+  async analyzeMealPhoto(image: AIImageInput): Promise<MealAnalysis> {
+    if (!image.data) {
+      throw new Error("MealAnalysisService.analyzeMealPhoto requires image data.");
+    }
+
+    const response = await this.aiProvider.complete({
+      system: PHOTO_SYSTEM_PROMPT,
+      prompt: PHOTO_PROMPT,
+      image,
+      jsonSchema: { ...MEAL_ANALYSIS_SCHEMA },
+    });
+
+    return parseAnalysis(response.text, "Meal from photo");
   }
 }
 

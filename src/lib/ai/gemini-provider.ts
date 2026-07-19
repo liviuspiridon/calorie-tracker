@@ -36,12 +36,21 @@ function getClient(): GoogleGenAI {
  * JSON — callers' defensive parsing remains as a backstop, not the primary
  * contract. Thinking is kept minimal: extraction doesn't need it, and on
  * the free tier it dominates latency.
+ *
+ * An `image` on the request becomes an inline-data part alongside the text,
+ * which is how Gemini takes vision input — the same flash-lite model handles
+ * it, so photo and text analysis share one code path and one model.
  */
 export class GeminiProvider implements AIProvider {
   async complete(request: AICompletionRequest): Promise<AICompletionResponse> {
     const response = await getClient().models.generateContent({
       model: MODEL,
-      contents: request.prompt,
+      contents: request.image
+        ? [
+            { inlineData: { mimeType: request.image.mimeType, data: request.image.data } },
+            { text: request.prompt },
+          ]
+        : request.prompt,
       config: {
         systemInstruction: request.system,
         thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },

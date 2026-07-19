@@ -5,9 +5,10 @@ import { ArrowUpIcon, CameraIcon, Loader2Icon, MicIcon } from "lucide-react";
 
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { fileToCompressedBase64 } from "@/lib/image";
 import { TODAY, TODAY_FONT } from "@/lib/today-theme";
 
-import { analyzeMeal } from "../actions";
+import { analyzeMeal, analyzeMealPhoto } from "../actions";
 import type { MealAnalysis, MealLogEntry } from "../types";
 
 type FlowState =
@@ -53,6 +54,9 @@ export function LogMealSheet({
   const [text, setText] = React.useState("");
   const [flow, setFlow] = React.useState<FlowState>({ step: "compose" });
   const [draft, setDraft] = React.useState<MealAnalysis>(EMPTY_ANALYSIS);
+
+  const [photoBusy, setPhotoBusy] = React.useState(false);
+  const photoInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // The textarea value when dictation started — new speech is appended after
   // it, so a session's transcript re-renders cleanly without duplicating.
@@ -103,6 +107,28 @@ export function LogMealSheet({
     } else {
       voiceBaseRef.current = text.trim();
       startVoice();
+    }
+  }
+
+  async function handlePhotoSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    // Clear the input so picking the same file twice still fires onChange.
+    event.target.value = "";
+    if (!file) return;
+
+    stopVoice();
+    setPhotoBusy(true);
+    try {
+      const image = await fileToCompressedBase64(file);
+      const analysis = await analyzeMealPhoto(image);
+      setDraft(analysis);
+      // Keeps the saved entry's note meaningful — there's no typed text here.
+      setText(analysis.description);
+      setFlow({ step: "review", analysis });
+    } catch {
+      setFlow({ step: "error", message: "Couldn't read that photo. Try again." });
+    } finally {
+      setPhotoBusy(false);
     }
   }
 
@@ -211,10 +237,16 @@ export function LogMealSheet({
                 badge={voiceSupported ? undefined : "SOON"}
               />
               <ComposerModePill
-                icon={<CameraIcon className="size-3.5" />}
+                icon={
+                  photoBusy ? (
+                    <Loader2Icon className="size-3.5 animate-spin" />
+                  ) : (
+                    <CameraIcon className="size-3.5" />
+                  )
+                }
                 label="Photo"
-                disabled
-                badge="SOON"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={photoBusy || flow.step === "analyzing"}
               />
               <div className="flex-1" />
               <button
@@ -232,6 +264,21 @@ export function LogMealSheet({
                 )}
               </button>
             </div>
+            {/* capture="environment" opens the rear camera directly on
+                mobile. Drop the attribute to get the library picker instead. */}
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handlePhotoSelected}
+              className="hidden"
+            />
+            {photoBusy && (
+              <p className="mt-2 text-[11.5px] font-medium" style={{ color: TODAY.ink45 }}>
+                Reading your photo — Coach is estimating the macros.
+              </p>
+            )}
             {isListening && (
               <p className="mt-2 text-[11.5px] font-medium" style={{ color: VOICE_RED }}>
                 Listening in Romanian — tap the mic again to stop.

@@ -1,7 +1,19 @@
+export interface AIImageInput {
+  /** Raw base64 — no `data:` URL prefix. */
+  data: string;
+  mimeType: string;
+}
+
 export interface AICompletionRequest {
   /** Sets the model's role/behavior — separate from the user-facing prompt. */
   system?: string;
   prompt: string;
+  /**
+   * Optional image the prompt refers to. Every major provider takes inline
+   * base64 for vision requests, so this stays provider-neutral; adapters map
+   * it to their own part shape.
+   */
+  image?: AIImageInput;
   /**
    * JSON Schema the response text must conform to. Providers with
    * structured-output support enforce it server-side (Gemini via
