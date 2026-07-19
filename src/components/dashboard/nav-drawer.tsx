@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Target, TrendingDown } from "lucide-react";
 
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { TODAY, TODAY_FONT } from "@/lib/today-theme";
@@ -45,9 +46,7 @@ export function NavDrawer({
             className="flex items-center gap-3 rounded-2xl px-5 py-5 text-left text-[15px] font-semibold transition-colors hover:bg-[rgba(20,23,15,0.04)]"
             style={{ background: TODAY.chip2, color: TODAY.ink }}
           >
-            <span className="text-xl" aria-hidden="true">
-              🎯
-            </span>
+            <Target className="size-[18px] opacity-70" aria-hidden="true" />
             Daily Targets
           </button>
 
@@ -57,9 +56,7 @@ export function NavDrawer({
             className="flex items-center gap-3 rounded-2xl px-5 py-5 text-[15px] font-semibold transition-colors hover:bg-[rgba(20,23,15,0.04)]"
             style={{ background: TODAY.chip2, color: TODAY.ink }}
           >
-            <span className="text-xl" aria-hidden="true">
-              📉
-            </span>
+            <TrendingDown className="size-[18px] opacity-70" aria-hidden="true" />
             Weight Evolution
           </Link>
         </nav>

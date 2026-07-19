@@ -15,10 +15,10 @@ const MONTH_NAMES = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const DAY_LEVEL_CLASSES: Record<DayLogLevel, string> = {
-  "under-target": "bg-[#EAF5EA] text-[#1E4620]",
-  "at-target": "bg-[#FEF9E5] text-[#5C4010]",
-  "over-target": "bg-[#FDF0ED] text-[#601D13]",
+const DAY_LEVEL_CLASSES = {
+  success: "bg-[#EAF5EA] text-[#1E4620]", // Verde Muted (Deficit realizat)
+  maintenance: "bg-[#FEF9E5] text-[#5C4010]", // Galben Ochre stins (Zonă gri)
+  surplus: "bg-[#FDF0ED] text-[#601D13]", // Roșu Teracotă / Clay (Surplus)
 };
 
 function isAfterDay(a: Date, b: Date): boolean {
@@ -224,7 +224,16 @@ function CalendarDay({
   } else if (isDisabled) {
     stateClasses = "text-neutral-300 pointer-events-none bg-transparent";
   } else {
-    stateClasses = DAY_LEVEL_CLASSES[classifyDayLog(caloriesConsumed!, calorieTarget)];
+    // Calculăm bugetul rămas (Țintă - Consumat)
+    const remainingCalories = calorieTarget - (caloriesConsumed || 0);
+
+    if (remainingCalories >= 0) {
+      stateClasses = DAY_LEVEL_CLASSES.success;
+    } else if (remainingCalories < 0 && Math.abs(remainingCalories) < 550) {
+      stateClasses = DAY_LEVEL_CLASSES.maintenance;
+    } else {
+      stateClasses = DAY_LEVEL_CLASSES.surplus;
+    }
   }
 
   return (

@@ -4,7 +4,7 @@ import { TODAY } from "@/lib/today-theme";
 
 const WIDTH = 300;
 const HEIGHT = 120;
-const PAD_X = 4;
+const PAD_X = 24;
 const PAD_Y = 16;
 
 /**
