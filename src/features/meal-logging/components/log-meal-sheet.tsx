@@ -264,13 +264,14 @@ export function LogMealSheet({
                 )}
               </button>
             </div>
-            {/* capture="environment" opens the rear camera directly on
-                mobile. Drop the attribute to get the library picker instead. */}
+            {/* Deliberately no `capture` attribute: it would force the camera
+                open and remove the Photo Library option, so meals you
+                photographed earlier couldn't be logged. Without it, mobile
+                shows the native Camera / Library / Browse menu. */}
             <input
               ref={photoInputRef}
               type="file"
               accept="image/*"
-              capture="environment"
               onChange={handlePhotoSelected}
               className="hidden"
             />
