@@ -35,6 +35,11 @@ export const TODAY = {
   accentInk: "#7C9B2F",
   todayHighlight: "#EBF3D2",
   handleBar: "rgba(20,23,15,0.14)",
+  /** Soft, desaturated terracotta accent — the warm counterpoint to the
+   *  lime/olive calorie palette. Solid form for strokes/dots (chart lines),
+   *  fill form for translucent fills (e.g. the budget meter's deficit block). */
+  clay: "#BF7A5E",
+  clayFill: "rgba(191,122,94,0.35)",
 } as const;
 
 /** Applied at the root of every Today-screen surface, incl. each sheet (see header above). */

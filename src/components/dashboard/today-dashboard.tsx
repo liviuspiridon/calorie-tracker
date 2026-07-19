@@ -18,6 +18,7 @@ import { DailyBudgetCard } from "./daily-budget-card";
 import { EditTargetsSheet } from "./edit-targets-sheet";
 import { MealComposerBar } from "./meal-composer-bar";
 import { MealDetailSheet } from "./meal-detail-sheet";
+import { NavDrawer } from "./nav-drawer";
 import { NextAction } from "./next-action";
 import { TodaysMeals } from "./todays-meals";
 
@@ -28,6 +29,7 @@ export function TodayDashboard() {
   const { meals, status: mealsStatus, retry: retryMeals, saveMeal, deleteMeal } = useMealLog();
   const [logMealOpen, setLogMealOpen] = React.useState(false);
   const [editTargetsOpen, setEditTargetsOpen] = React.useState(false);
+  const [navDrawerOpen, setNavDrawerOpen] = React.useState(false);
   const [calendarOpen, setCalendarOpen] = React.useState(false);
   const [mealDetailOpen, setMealDetailOpen] = React.useState(false);
   const [activeMeal, setActiveMeal] = React.useState<MealLogEntry | null>(null);
@@ -165,7 +167,7 @@ export function TodayDashboard() {
           </button>
           <button
             type="button"
-            onClick={() => setEditTargetsOpen(true)}
+            onClick={() => setNavDrawerOpen(true)}
             aria-label="More options"
             className="flex size-[38px] items-center justify-center rounded-full"
             style={{ background: TODAY.chip }}
@@ -237,6 +239,11 @@ export function TodayDashboard() {
         onOpenChange={setEditTargetsOpen}
         targets={targets}
         onSave={handleSaveTargets}
+      />
+      <NavDrawer
+        open={navDrawerOpen}
+        onOpenChange={setNavDrawerOpen}
+        onOpenTargets={() => setEditTargetsOpen(true)}
       />
       <CalendarSheet
         open={calendarOpen}

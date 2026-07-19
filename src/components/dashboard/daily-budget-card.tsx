@@ -10,13 +10,6 @@ const TARGET_DEFICIT_KCAL = 550;
 const HIDE_LABEL_BELOW_PCT = 4;
 /** Below this width, the middle block's remaining label flips above the bar. */
 const FLIP_REMAINING_BELOW_PCT = 12;
-/**
- * Soft, desaturated terracotta for the deficit block — a warm counterpoint
- * to the cool green "eatable" middle, tuned to sit at the same lightness as
- * the pale-lime it replaces (so the deficit stays the quietest segment) and
- * to blend into the card's warm cream surface rather than shout.
- */
-const DEFICIT_CLAY = "rgba(191, 122, 94, 0.35)";
 
 /**
  * The hero surface: headline countdown, the 3-block budget meter, and the
@@ -103,7 +96,10 @@ export function DailyBudgetCard({
     {
       key: "deficit",
       pct: deficitPct,
-      background: DEFICIT_CLAY,
+      // Soft clay — a warm counterpoint to the cool green "eatable" middle,
+      // tuned (see today-theme.ts) to sit at the pale-lime's old lightness
+      // so the deficit stays the quietest segment.
+      background: TODAY.clayFill,
     },
   ];
   const bars = blocks.filter((block) => block.pct > 0.1);

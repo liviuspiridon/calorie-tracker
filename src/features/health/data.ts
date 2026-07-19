@@ -49,3 +49,27 @@ export async function upsertDailyMetrics(metrics: {
   );
   if (error) throw error;
 }
+
+/** One synced weight log, in kilograms. */
+export interface WeightEntry {
+  date: string;
+  weight: number;
+}
+
+/**
+ * Weight history, most recent first — rows with no weight synced that day
+ * are excluded rather than shown as a gap or zero.
+ */
+export async function fetchWeightHistory(limit = 60): Promise<WeightEntry[]> {
+  const { data, error } = await supabase
+    .from("daily_metrics")
+    .select("date, weight")
+    .not("weight", "is", null)
+    .order("date", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data as { date: string; weight: number }[]).map((row) => ({
+    date: row.date,
+    weight: row.weight,
+  }));
+}
