@@ -49,7 +49,7 @@ export function LogMealSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** `isNewEntry` is false when this is an edit to an existing meal — the
-   *  caller uses it to decide whether a post-log reflection makes sense. */
+   *  caller uses it to decide whether a post-log nudge makes sense. */
   onSave: (entry: MealLogEntry, isNewEntry: boolean) => void;
   editingMeal?: MealLogEntry | null;
 }) {

@@ -227,9 +227,9 @@ function CalendarDay({
     // Calculăm bugetul rămas (Țintă - Consumat)
     const remainingCalories = calorieTarget - (caloriesConsumed || 0);
 
-    if (remainingCalories >= 0) {
+    if (remainingCalories >= -550) {
       stateClasses = DAY_LEVEL_CLASSES.success;
-    } else if (remainingCalories < 0 && Math.abs(remainingCalories) < 550) {
+    } else if (remainingCalories < -550 && remainingCalories >= -1000) {
       stateClasses = DAY_LEVEL_CLASSES.maintenance;
     } else {
       stateClasses = DAY_LEVEL_CLASSES.surplus;

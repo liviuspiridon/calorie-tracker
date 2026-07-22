@@ -3,9 +3,6 @@
 import * as React from "react";
 import { ChevronDownIcon, EllipsisIcon } from "lucide-react";
 
-import { FocusModal } from "@/components/focus/focus-modal";
-import type { FocusInsightRequest } from "@/features/focus/types";
-import { useFocusInsight } from "@/features/focus/use-focus-insight";
 import { computeDayStatus, getNextAction } from "@/features/goals/lib/daily-progress";
 import type { DailyTargets } from "@/features/goals/types";
 import { useDailyTargets } from "@/features/goals/use-daily-targets";
@@ -13,6 +10,7 @@ import { useDailyMetrics } from "@/features/health/use-daily-metrics";
 import { LogMealSheet } from "@/features/meal-logging/components/log-meal-sheet";
 import type { MealLogEntry } from "@/features/meal-logging/types";
 import { useMealLog } from "@/features/meal-logging/use-meal-log";
+import { decideNudge, type Nudge } from "@/features/nudge/nudge";
 import { TODAY, TODAY_FONT } from "@/lib/today-theme";
 import { cn, formatHeaderDate, formatLocalDate, isSameDay } from "@/lib/utils";
 
@@ -23,6 +21,7 @@ import { MealComposerBar } from "./meal-composer-bar";
 import { MealDetailSheet } from "./meal-detail-sheet";
 import { NavDrawer } from "./nav-drawer";
 import { NextAction } from "./next-action";
+import { NudgeSheet } from "./nudge-sheet";
 import { TodaysMeals } from "./todays-meals";
 
 const EASE = "ease-[cubic-bezier(0.23,1,0.32,1)]";
@@ -33,9 +32,10 @@ export function TodayDashboard() {
   const [logMealOpen, setLogMealOpen] = React.useState(false);
   const [editTargetsOpen, setEditTargetsOpen] = React.useState(false);
   const [navDrawerOpen, setNavDrawerOpen] = React.useState(false);
-  const [focusModalOpen, setFocusModalOpen] = React.useState(false);
-  const [focusPayload, setFocusPayload] = React.useState<FocusInsightRequest | null>(null);
-  const { insight: focusInsight, status: focusStatus } = useFocusInsight(focusPayload);
+  // Content and visibility are separate so the message survives the sheet's
+  // exit animation (same pattern as activeMeal + mealDetailOpen).
+  const [nudge, setNudge] = React.useState<Nudge | null>(null);
+  const [nudgeOpen, setNudgeOpen] = React.useState(false);
   const [calendarOpen, setCalendarOpen] = React.useState(false);
   const [mealDetailOpen, setMealDetailOpen] = React.useState(false);
   const [activeMeal, setActiveMeal] = React.useState<MealLogEntry | null>(null);
@@ -89,42 +89,38 @@ export function TodayDashboard() {
     : null;
 
   /**
-   * The Focus Insight is always about the *real* today, never whatever date
-   * is currently being browsed via the calendar — a "log again" while
-   * viewing last week must still reflect on today's actual totals. `meals`
-   * may not yet include `entry` (saveMeal's Supabase round-trip hasn't
-   * resolved when this runs), so it's added explicitly rather than waited on.
+   * The nudge decision runs synchronously against the *real* today, never
+   * whatever date is being browsed via the calendar — a "log again" while
+   * viewing last week still judges today's actual totals. `meals` may not
+   * yet include `entry` (saveMeal's Supabase round-trip hasn't resolved
+   * when this runs), so before/after totals are built around it explicitly.
+   * The budget is the effective one (base + activity) when viewing today;
+   * on a browsed past date today's activity isn't loaded, so the base
+   * target stands in.
    */
-  function buildFocusInsightPayload(entry: MealLogEntry): FocusInsightRequest {
-    const todaysMeals = meals.filter((meal) => isSameDay(new Date(meal.loggedAt), now));
-    const allTodaysMeals = todaysMeals.some((meal) => meal.id === entry.id)
-      ? todaysMeals
-      : [...todaysMeals, entry];
-    const caloriesConsumedToday = allTodaysMeals.reduce(
-      (sum, meal) => sum + meal.analysis.calories,
-      0,
+  function maybeNudge(entry: MealLogEntry) {
+    const todaysOtherMeals = meals.filter(
+      (meal) => isSameDay(new Date(meal.loggedAt), now) && meal.id !== entry.id,
     );
+    const caloriesBefore = todaysOtherMeals.reduce((sum, meal) => sum + meal.analysis.calories, 0);
+    const proteinBefore = todaysOtherMeals.reduce((sum, meal) => sum + meal.analysis.protein, 0);
 
-    const toMealInput = (meal: MealLogEntry) => ({
-      description: meal.analysis.description,
-      calories: meal.analysis.calories,
-      protein: meal.analysis.protein,
-      carbs: meal.analysis.carbs,
-      fat: meal.analysis.fat,
+    const result = decideNudge({
+      entryCalories: entry.analysis.calories,
+      caloriesBefore,
+      caloriesAfter: caloriesBefore + entry.analysis.calories,
+      calorieTarget: isViewingToday ? effectiveCalorieTarget : targets.calories,
+      proteinBefore,
+      proteinAfter: proteinBefore + entry.analysis.protein,
+      proteinTarget: targets.protein,
+      localHour: now.getHours(),
     });
 
-    return {
-      caloriesConsumed: caloriesConsumedToday,
-      calorieTarget: targets.calories,
-      localHour: now.getHours(),
-      newItem: toMealInput(entry),
-      meals: allTodaysMeals.map(toMealInput),
-    };
-  }
-
-  function handleFocusModalOpenChange(open: boolean) {
-    setFocusModalOpen(open);
-    if (!open) setFocusPayload(null);
+    // "Nudge or silence": for a routine entry there is nothing to show.
+    if (result) {
+      setNudge(result);
+      setNudgeOpen(true);
+    }
   }
 
   // Mutators write to Supabase first and update local state on success (see
@@ -132,10 +128,7 @@ export function TodayDashboard() {
   // closed by then and there's no toast surface yet.
   function handleSaveMeal(entry: MealLogEntry, isNewEntry: boolean) {
     saveMeal(entry).catch((error) => console.error("Failed to save meal", error));
-    if (isNewEntry) {
-      setFocusPayload(buildFocusInsightPayload(entry));
-      setFocusModalOpen(true);
-    }
+    if (isNewEntry) maybeNudge(entry);
   }
 
   function handleSaveTargets(next: DailyTargets) {
@@ -297,12 +290,7 @@ export function TodayDashboard() {
         onOpenChange={setNavDrawerOpen}
         onOpenTargets={() => setEditTargetsOpen(true)}
       />
-      <FocusModal
-        open={focusModalOpen}
-        onOpenChange={handleFocusModalOpenChange}
-        insight={focusInsight}
-        status={focusStatus}
-      />
+      <NudgeSheet nudge={nudge} open={nudgeOpen} onOpenChange={setNudgeOpen} />
       <CalendarSheet
         open={calendarOpen}
         onOpenChange={setCalendarOpen}
