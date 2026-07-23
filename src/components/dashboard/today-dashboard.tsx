@@ -101,7 +101,9 @@ export function TodayDashboard() {
       setNudge(result);
       setNudgeOpen(true);
     } else {
-      setNudge(null);
+      // Silence: just make sure nothing is open. Deliberately does NOT null
+      // `nudge` — the sheet keeps rendering the last message during its exit
+      // animation, and stale content is overwritten on the next nudge anyway.
       setNudgeOpen(false);
     }
   }
