@@ -38,6 +38,11 @@ export function NudgeSheet({
     }
   }, [open]);
 
+  // Previne afișarea componentei și a fundalului dacă nu există niciun mesaj
+  if (!nudge) {
+    return null;
+  }
+
   function handleTouchStart(event: React.TouchEvent) {
     startYRef.current = event.touches[0].clientY;
     setDragging(true);
@@ -59,7 +64,7 @@ export function NudgeSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open && Boolean(nudge)} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
         showCloseButton={false}
@@ -94,15 +99,13 @@ export function NudgeSheet({
           <XIcon className="size-3.5" style={{ color: TODAY.ink }} />
         </button>
 
-        {nudge && (
-          <p
-            aria-live="polite"
-            className="pr-8 text-[15px] leading-relaxed font-semibold"
-            style={{ color: TODAY.ink }}
-          >
-            {nudge.message}
-          </p>
-        )}
+        <p
+          aria-live="polite"
+          className="pr-8 text-[15px] leading-relaxed font-semibold"
+          style={{ color: TODAY.ink }}
+        >
+          {nudge.message}
+        </p>
       </SheetContent>
     </Sheet>
   );
