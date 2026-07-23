@@ -32,8 +32,7 @@ export function TodayDashboard() {
   const [logMealOpen, setLogMealOpen] = React.useState(false);
   const [editTargetsOpen, setEditTargetsOpen] = React.useState(false);
   const [navDrawerOpen, setNavDrawerOpen] = React.useState(false);
-  // Content and visibility are separate so the message survives the sheet's
-  // exit animation (same pattern as activeMeal + mealDetailOpen).
+  
   const [nudge, setNudge] = React.useState<Nudge | null>(null);
   const [nudgeOpen, setNudgeOpen] = React.useState(false);
   const [calendarOpen, setCalendarOpen] = React.useState(false);
@@ -49,9 +48,6 @@ export function TodayDashboard() {
   const isLoading = targetsStatus === "loading" || mealsStatus === "loading";
   const loadFailed = targetsStatus === "error" || mealsStatus === "error";
 
-  // The staggered entrance doubles as the loading state: content stays held
-  // (opacity-0) until real data has arrived, then reveals in one pass — no
-  // skeletons, and no "Nothing logged" flash before the fetch resolves.
   React.useEffect(() => {
     if (isLoading || loadFailed) return;
     const frame = requestAnimationFrame(() => setRevealed(true));
@@ -70,15 +66,10 @@ export function TodayDashboard() {
   const caloriesConsumed = selectedDateMeals.reduce((sum, meal) => sum + meal.analysis.calories, 0);
   const proteinConsumed = selectedDateMeals.reduce((sum, meal) => sum + meal.analysis.protein, 0);
 
-  // Apple Health metrics for the viewed day (synced via /api/metrics).
-  // Activity raises the day's calorie budget: base + active - consumed.
   const metrics = useDailyMetrics(formatLocalDate(selectedDate));
   const activeCalories = Math.round(metrics?.activeCalories ?? 0);
   const effectiveCalorieTarget = targets.calories + activeCalories;
 
-  // computeDayStatus/getNextAction reason about pacing through a day still
-  // in progress (time-of-day fraction) — not meaningful for a past,
-  // completed date, so they only run while viewing today.
   const nextAction = isViewingToday
     ? getNextAction({
         status: computeDayStatus({ caloriesConsumed, calorieTarget: effectiveCalorieTarget, now }),
@@ -88,16 +79,6 @@ export function TodayDashboard() {
       })
     : null;
 
-  /**
-   * The nudge decision runs synchronously against the *real* today, never
-   * whatever date is being browsed via the calendar — a "log again" while
-   * viewing last week still judges today's actual totals. `meals` may not
-   * yet include `entry` (saveMeal's Supabase round-trip hasn't resolved
-   * when this runs), so before/after totals are built around it explicitly.
-   * The budget is the effective one (base + activity) when viewing today;
-   * on a browsed past date today's activity isn't loaded, so the base
-   * target stands in.
-   */
   function maybeNudge(entry: MealLogEntry) {
     const todaysOtherMeals = meals.filter(
       (meal) => isSameDay(new Date(meal.loggedAt), now) && meal.id !== entry.id,
@@ -116,16 +97,15 @@ export function TodayDashboard() {
       localHour: now.getHours(),
     });
 
-    // "Nudge or silence": for a routine entry there is nothing to show.
     if (result) {
       setNudge(result);
       setNudgeOpen(true);
+    } else {
+      setNudge(null);
+      setNudgeOpen(false);
     }
   }
 
-  // Mutators write to Supabase first and update local state on success (see
-  // useMealLog). A failed write currently only logs — the sheet has already
-  // closed by then and there's no toast surface yet.
   function handleSaveMeal(entry: MealLogEntry, isNewEntry: boolean) {
     saveMeal(entry).catch((error) => console.error("Failed to save meal", error));
     if (isNewEntry) maybeNudge(entry);
@@ -172,7 +152,6 @@ export function TodayDashboard() {
     if (targetsStatus === "error") retryTargets();
   }
 
-  /** See today-dashboard's earlier note in the previous design pass re: not merging onto <Button>. */
   function revealProps(delayMs: number, extraClassName?: string) {
     return {
       className: cn(
