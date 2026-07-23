@@ -9,15 +9,6 @@ import { TODAY, TODAY_FONT } from "@/lib/today-theme";
 
 const SWIPE_DISMISS_PX = 80;
 
-/**
- * The lightweight post-log nudge: a bottom sheet in the same chrome as the
- * app's other bottom sheets (handle pill, rounded top, cream surface).
- * Dismisses on swipe-down, on the close icon, or on backdrop tap.
- *
- * Swipe-down is a real touch gesture, implemented locally rather than on
- * the shared Sheet primitive: the content tracks the finger via
- * translateY, springs back under the threshold, dismisses past it.
- */
 export function NudgeSheet({
   nudge,
   open,
@@ -38,8 +29,8 @@ export function NudgeSheet({
     }
   }, [open]);
 
-  // Previne afișarea componentei și a fundalului dacă nu există niciun mesaj
-  if (!nudge) {
+  // Dacă nu există mesaj (nudge este null sau fără text), nu randăm NIMIC.
+  if (!nudge || !nudge.message) {
     return null;
   }
 
@@ -64,7 +55,7 @@ export function NudgeSheet({
   }
 
   return (
-    <Sheet open={open && Boolean(nudge)} onOpenChange={onOpenChange}>
+    <Sheet open={Boolean(open && nudge?.message)} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
         showCloseButton={false}
@@ -82,7 +73,6 @@ export function NudgeSheet({
       >
         <SheetTitle className="sr-only">Notificare</SheetTitle>
 
-        {/* Handle pill fixat în partea de sus a sheet-ului */}
         <div
           className="absolute top-3.5 left-1/2 h-[5px] w-[38px] -translate-x-1/2 rounded-full"
           style={{ background: TODAY.handleBar }}
