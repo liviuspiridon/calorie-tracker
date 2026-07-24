@@ -23,6 +23,7 @@ const EMPTY_ANALYSIS: MealAnalysis = {
   protein: 0,
   carbs: 0,
   fat: 0,
+  fiber: 0,
 };
 
 /** Recording-state accent for the Voice pill — the app has no red token. */
@@ -337,6 +338,11 @@ export function LogMealSheet({
                 label="Fat (g)"
                 value={draft.fat}
                 onChange={(value) => setDraft((prev) => ({ ...prev, fat: value }))}
+              />
+              <NumberField
+                label="Fiber (g)"
+                value={draft.fiber}
+                onChange={(value) => setDraft((prev) => ({ ...prev, fiber: value }))}
               />
             </div>
 

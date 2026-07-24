@@ -179,6 +179,8 @@ export function MealDetailSheet({
               <MacroTile label="Carbs" value={meal.analysis.carbs} />
               <div className="w-px" style={{ background: TODAY.hairlineStrong }} />
               <MacroTile label="Fat" value={meal.analysis.fat} />
+              <div className="w-px" style={{ background: TODAY.hairlineStrong }} />
+              <MacroTile label="Fiber" value={meal.analysis.fiber} />
             </div>
           </>
         )}

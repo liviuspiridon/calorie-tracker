@@ -9,6 +9,7 @@ export interface MealAnalysis {
   protein: number;
   carbs: number;
   fat: number;
+  fiber: number;
   /**
    * Set on freshly-analyzed meals; the meals table has no confidence column,
    * so it doesn't survive a reload. Absent means "unknown", and the UI hides

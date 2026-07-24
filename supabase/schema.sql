@@ -14,22 +14,65 @@ create table if not exists meals (
   calories integer not null,
   protein integer not null,
   carbs integer not null,
-  fat integer not null
+  fat integer not null,
+  fiber integer not null default 0
 );
 
 create index if not exists meals_created_at_idx on meals (created_at desc);
 
+-- Migration for an existing meals table created before fiber tracking:
+-- backfilled to 0 for old rows (fiber was never estimated for them).
+alter table meals
+  add column if not exists fiber integer not null default 0;
+
 create table if not exists daily_targets (
   id integer primary key,
+  -- Resting Energy / BMR and the target deficit are what the app now lets
+  -- the user edit; calories is derived (bmr - calorie_deficit), kept as a
+  -- real column rather than a view so it stays queryable by anything that
+  -- only knows the old shape (e.g. a future direct SQL query or export).
+  -- The app always writes it alongside bmr/calorie_deficit — never on its
+  -- own — so it can't drift out of sync.
+  bmr numeric not null,
+  calorie_deficit numeric not null,
   calories integer not null,
-  protein integer not null
+  protein integer not null,
+  fiber integer not null default 28,
+  -- User's height, for computing BMI on the fly from weight entries. Not
+  -- date-scoped like weight/body_fat — just the one current value.
+  height_cm numeric not null default 178
 );
 
 -- Single-user app: one well-known row holds the targets. Values mirror
 -- DEFAULT_DAILY_TARGETS in src/features/goals/types.ts.
-insert into daily_targets (id, calories, protein)
-values (1, 2000, 120)
+insert into daily_targets (id, bmr, calorie_deficit, calories, protein, fiber, height_cm)
+values (1, 1750, 500, 1250, 120, 28, 178)
 on conflict (id) do nothing;
+
+-- Migration for an existing daily_targets row created before bmr /
+-- calorie_deficit existed (plain `calories` only). Backfills bmr so the
+-- derived target (bmr - calorie_deficit) equals the row's current calories
+-- value, i.e. today's effective target is preserved exactly — nothing
+-- changes for the user until they edit the new fields.
+alter table daily_targets
+  add column if not exists bmr numeric,
+  add column if not exists calorie_deficit numeric not null default 500;
+
+update daily_targets
+  set bmr = calories + calorie_deficit
+  where bmr is null;
+
+alter table daily_targets
+  alter column bmr set not null;
+
+-- Migration for an existing daily_targets row created before fiber tracking.
+alter table daily_targets
+  add column if not exists fiber integer not null default 28;
+
+-- Migration for an existing daily_targets row created before height was
+-- tracked (needed for BMI).
+alter table daily_targets
+  add column if not exists height_cm numeric not null default 178;
 
 -- Balance is a personal, single-user app with no Supabase Auth: the browser
 -- talks to the database with the anon/publishable key, so policies must
@@ -53,17 +96,28 @@ create policy "anon full access to daily_targets"
 
 -- Daily Apple Health metrics, synced by an iOS Shortcut posting to
 -- /api/metrics (bearer-token auth — see METRICS_WEBHOOK_TOKEN in
--- .env.example). One row per calendar day, upserted on date. user_id is
--- null for now — Balance is single-user with no auth; the column exists so
--- a future multi-user shape doesn't need a migration.
+-- .env.example), plus manually-logged weight/body_fat entries from the
+-- Body Composition hub. One row per calendar day, upserted on date. user_id
+-- is null for now — Balance is single-user with no auth; the column exists
+-- so a future multi-user shape doesn't need a migration.
+--
+-- "Deleting" a weight or body_fat entry from the Body Composition hub nulls
+-- that column for the date rather than deleting the row, since the row may
+-- still hold the other metric (or active_calories from the Health sync).
 create table if not exists daily_metrics (
   id uuid primary key default gen_random_uuid(),
   user_id uuid,
   date date not null unique,
   active_calories numeric,
   weight numeric,
+  body_fat numeric,
   updated_at timestamptz not null default now()
 );
+
+-- Migration for an existing daily_metrics table created before body fat
+-- tracking.
+alter table daily_metrics
+  add column if not exists body_fat numeric;
 
 alter table daily_metrics enable row level security;
 

@@ -3,7 +3,7 @@
 import * as React from "react";
 
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import type { DailyTargets } from "@/features/goals/types";
+import { calorieTargetFrom, type DailyTargets } from "@/features/goals/types";
 import { TODAY, TODAY_FONT } from "@/lib/today-theme";
 
 /**
@@ -24,23 +24,46 @@ export function EditTargetsSheet({
   targets: DailyTargets;
   onSave: (targets: DailyTargets) => void;
 }) {
-  const [calories, setCalories] = React.useState(String(targets.calories));
+  const [bmr, setBmr] = React.useState(String(targets.bmr));
+  const [calorieDeficit, setCalorieDeficit] = React.useState(String(targets.calorieDeficit));
   const [protein, setProtein] = React.useState(String(targets.protein));
+  const [fiber, setFiber] = React.useState(String(targets.fiber));
+  const [heightCm, setHeightCm] = React.useState(String(targets.heightCm));
 
   React.useEffect(() => {
     if (open) {
-      setCalories(String(targets.calories));
+      setBmr(String(targets.bmr));
+      setCalorieDeficit(String(targets.calorieDeficit));
       setProtein(String(targets.protein));
+      setFiber(String(targets.fiber));
+      setHeightCm(String(targets.heightCm));
     }
   }, [open, targets]);
 
-  function handleSave() {
-    const parsedCalories = Number(calories);
-    const parsedProtein = Number(protein);
-    if (!Number.isFinite(parsedCalories) || parsedCalories <= 0) return;
-    if (!Number.isFinite(parsedProtein) || parsedProtein <= 0) return;
+  const parsedBmr = Number(bmr);
+  const parsedDeficit = Number(calorieDeficit);
+  const calculatedTarget =
+    Number.isFinite(parsedBmr) && Number.isFinite(parsedDeficit)
+      ? Math.round(calorieTargetFrom({ bmr: parsedBmr, calorieDeficit: parsedDeficit }))
+      : null;
 
-    onSave({ calories: Math.round(parsedCalories), protein: Math.round(parsedProtein) });
+  function handleSave() {
+    const parsedProtein = Number(protein);
+    const parsedFiber = Number(fiber);
+    const parsedHeight = Number(heightCm);
+    if (!Number.isFinite(parsedBmr) || parsedBmr <= 0) return;
+    if (!Number.isFinite(parsedDeficit)) return;
+    if (!Number.isFinite(parsedProtein) || parsedProtein <= 0) return;
+    if (!Number.isFinite(parsedFiber) || parsedFiber <= 0) return;
+    if (!Number.isFinite(parsedHeight) || parsedHeight <= 0) return;
+
+    onSave({
+      bmr: Math.round(parsedBmr),
+      calorieDeficit: Math.round(parsedDeficit),
+      protein: Math.round(parsedProtein),
+      fiber: Math.round(parsedFiber),
+      heightCm: Math.round(parsedHeight),
+    });
     onOpenChange(false);
   }
 
@@ -62,23 +85,49 @@ export function EditTargetsSheet({
         <div className="mt-5 space-y-4">
           <div className="space-y-2">
             <label
-              htmlFor="target-calories"
+              htmlFor="target-bmr"
               className="font-mono text-[10.5px] font-semibold tracking-[0.14em] uppercase"
               style={{ color: TODAY.ink45 }}
             >
-              Calories
+              Resting energy (BMR)
             </label>
             <input
-              id="target-calories"
+              id="target-bmr"
               type="number"
               inputMode="numeric"
               min={1}
-              value={calories}
-              onChange={(event) => setCalories(event.target.value)}
+              value={bmr}
+              onChange={(event) => setBmr(event.target.value)}
               className="w-full rounded-2xl px-4 py-3 text-[15px] font-semibold outline-none"
               style={{ background: TODAY.chip2, color: TODAY.ink }}
             />
           </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="target-deficit"
+              className="font-mono text-[10.5px] font-semibold tracking-[0.14em] uppercase"
+              style={{ color: TODAY.ink45 }}
+            >
+              Daily target deficit
+            </label>
+            <input
+              id="target-deficit"
+              type="number"
+              inputMode="numeric"
+              value={calorieDeficit}
+              onChange={(event) => setCalorieDeficit(event.target.value)}
+              className="w-full rounded-2xl px-4 py-3 text-[15px] font-semibold outline-none"
+              style={{ background: TODAY.chip2, color: TODAY.ink }}
+            />
+          </div>
+          {calculatedTarget !== null && (
+            <p className="px-1 text-[13px] font-medium" style={{ color: TODAY.ink45 }}>
+              Calculated daily target:{" "}
+              <span className="font-semibold" style={{ color: TODAY.ink }}>
+                {calculatedTarget.toLocaleString()} kcal
+              </span>
+            </p>
+          )}
           <div className="space-y-2">
             <label
               htmlFor="target-protein"
@@ -94,6 +143,44 @@ export function EditTargetsSheet({
               min={1}
               value={protein}
               onChange={(event) => setProtein(event.target.value)}
+              className="w-full rounded-2xl px-4 py-3 text-[15px] font-semibold outline-none"
+              style={{ background: TODAY.chip2, color: TODAY.ink }}
+            />
+          </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="target-fiber"
+              className="font-mono text-[10.5px] font-semibold tracking-[0.14em] uppercase"
+              style={{ color: TODAY.ink45 }}
+            >
+              Daily fiber target (g)
+            </label>
+            <input
+              id="target-fiber"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              value={fiber}
+              onChange={(event) => setFiber(event.target.value)}
+              className="w-full rounded-2xl px-4 py-3 text-[15px] font-semibold outline-none"
+              style={{ background: TODAY.chip2, color: TODAY.ink }}
+            />
+          </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="target-height"
+              className="font-mono text-[10.5px] font-semibold tracking-[0.14em] uppercase"
+              style={{ color: TODAY.ink45 }}
+            >
+              Height (cm)
+            </label>
+            <input
+              id="target-height"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              value={heightCm}
+              onChange={(event) => setHeightCm(event.target.value)}
               className="w-full rounded-2xl px-4 py-3 text-[15px] font-semibold outline-none"
               style={{ background: TODAY.chip2, color: TODAY.ink }}
             />

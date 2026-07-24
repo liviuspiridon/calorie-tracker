@@ -19,6 +19,7 @@ interface MealRow {
   protein: number;
   carbs: number;
   fat: number;
+  fiber: number;
 }
 
 function toEntry(row: MealRow): MealLogEntry {
@@ -31,6 +32,7 @@ function toEntry(row: MealRow): MealLogEntry {
       protein: row.protein,
       carbs: row.carbs,
       fat: row.fat,
+      fiber: row.fiber,
     },
   };
 }
@@ -45,6 +47,7 @@ function toRow(entry: MealLogEntry): MealRow {
     protein: entry.analysis.protein,
     carbs: entry.analysis.carbs,
     fat: entry.analysis.fat,
+    fiber: entry.analysis.fiber,
   };
 }
 

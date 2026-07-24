@@ -41,6 +41,8 @@ export function DailyBudgetCard({
   activeCalories,
   proteinConsumed,
   proteinTarget,
+  fiberConsumed,
+  fiberTarget,
 }: {
   caloriesConsumed: number;
   /** Base daily target — activity raises the effective budget on top of it. */
@@ -48,6 +50,8 @@ export function DailyBudgetCard({
   activeCalories: number;
   proteinConsumed: number;
   proteinTarget: number;
+  fiberConsumed: number;
+  fiberTarget: number;
 }) {
   const effectiveTarget = calorieTarget + activeCalories;
   const isOver = caloriesConsumed > effectiveTarget;
@@ -56,6 +60,7 @@ export function DailyBudgetCard({
   const calorieDisplay = useCountUp(isOver ? caloriesOver : caloriesRemaining);
 
   const proteinPct = proteinTarget > 0 ? Math.min(1, proteinConsumed / proteinTarget) * 100 : 0;
+  const fiberPct = fiberTarget > 0 ? Math.min(1, fiberConsumed / fiberTarget) * 100 : 0;
 
   const envelope = calorieTarget + activeCalories + TARGET_DEFICIT_KCAL;
   const overBase = Math.max(0, caloriesConsumed - calorieTarget);
@@ -247,6 +252,30 @@ export function DailyBudgetCard({
             {proteinConsumed}
           </b>
           /{proteinTarget}g
+        </span>
+      </div>
+
+      <div className="mt-3 flex items-center gap-[14px]">
+        <span
+          className="text-[12.5px] font-semibold whitespace-nowrap"
+          style={{ color: TODAY.ink60 }}
+        >
+          Fiber
+        </span>
+        <div
+          className="h-[5px] flex-1 overflow-hidden rounded-full"
+          style={{ background: TODAY.track }}
+        >
+          <div
+            className="h-full rounded-full transition-[width] duration-700 ease-out"
+            style={{ width: `${fiberPct}%`, background: TODAY.clay }}
+          />
+        </div>
+        <span className="font-mono text-xs whitespace-nowrap tabular-nums" style={{ color: TODAY.ink50 }}>
+          <b className="font-medium" style={{ color: TODAY.ink }}>
+            {fiberConsumed}
+          </b>
+          /{fiberTarget}g
         </span>
       </div>
     </div>

@@ -8,7 +8,7 @@ const SYSTEM_PROMPT = `You are a nutrition analyst for a personal calorie-tracki
 Guidelines:
 - Use typical portion sizes when quantities aren't given.
 - description: a concise, cleaned-up restatement of the meal — keep the user's wording where it's already clear.
-- calories/protein/carbs/fat: whole-meal totals (kcal and grams), rounded to integers.
+- calories/protein/carbs/fat/fiber: whole-meal totals (kcal and grams), rounded to integers.
 - confidence: "high" when foods and quantities are specific, "medium" when portions had to be assumed, "low" when the description is vague or ambiguous.`;
 
 const PHOTO_SYSTEM_PROMPT = `You are a nutrition analyst for a personal calorie-tracking app, estimating a meal from a photo.
@@ -16,7 +16,7 @@ const PHOTO_SYSTEM_PROMPT = `You are a nutrition analyst for a personal calorie-
 Guidelines:
 - Identify every food and drink visible, and estimate portion sizes/weights from visual cues (plate and utensil size, container volume, height of the pile).
 - description: a concise list of what's on the plate, with your estimated portions — e.g. "Grilled chicken breast (~180g), rice (~150g), mixed salad".
-- calories/protein/carbs/fat: totals for everything visible, rounded to integers.
+- calories/protein/carbs/fat/fiber: totals for everything visible, rounded to integers.
 - confidence: "high" when foods and portions are clearly readable, "medium" when portions had to be assumed, "low" when the photo is unclear, partially hidden, or may not be food at all.
 - If the image contains no food, return zeros with "low" confidence and say so in the description.`;
 
@@ -35,9 +35,10 @@ const MEAL_ANALYSIS_SCHEMA = {
     protein: { type: "integer", description: "Total protein in grams" },
     carbs: { type: "integer", description: "Total carbohydrates in grams" },
     fat: { type: "integer", description: "Total fat in grams" },
+    fiber: { type: "integer", description: "Total dietary fiber in grams" },
     confidence: { type: "string", enum: ["low", "medium", "high"] },
   },
-  required: ["description", "calories", "protein", "carbs", "fat", "confidence"],
+  required: ["description", "calories", "protein", "carbs", "fat", "fiber", "confidence"],
   additionalProperties: false,
 } as const;
 
@@ -104,6 +105,7 @@ function parseAnalysis(rawText: string, fallbackDescription: string): MealAnalys
       protein: toNonNegativeNumber(parsed.protein),
       carbs: toNonNegativeNumber(parsed.carbs),
       fat: toNonNegativeNumber(parsed.fat),
+      fiber: toNonNegativeNumber(parsed.fiber),
       confidence: toConfidence(parsed.confidence),
     };
   } catch {
@@ -113,6 +115,7 @@ function parseAnalysis(rawText: string, fallbackDescription: string): MealAnalys
       protein: 0,
       carbs: 0,
       fat: 0,
+      fiber: 0,
       confidence: "low",
     };
   }

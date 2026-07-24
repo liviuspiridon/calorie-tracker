@@ -4,7 +4,7 @@ import * as React from "react";
 import { ChevronDownIcon, EllipsisIcon } from "lucide-react";
 
 import { computeDayStatus, getNextAction } from "@/features/goals/lib/daily-progress";
-import type { DailyTargets } from "@/features/goals/types";
+import { calorieTargetFrom, type DailyTargets } from "@/features/goals/types";
 import { useDailyTargets } from "@/features/goals/use-daily-targets";
 import { useDailyMetrics } from "@/features/health/use-daily-metrics";
 import { LogMealSheet } from "@/features/meal-logging/components/log-meal-sheet";
@@ -65,10 +65,12 @@ export function TodayDashboard() {
 
   const caloriesConsumed = selectedDateMeals.reduce((sum, meal) => sum + meal.analysis.calories, 0);
   const proteinConsumed = selectedDateMeals.reduce((sum, meal) => sum + meal.analysis.protein, 0);
+  const fiberConsumed = selectedDateMeals.reduce((sum, meal) => sum + meal.analysis.fiber, 0);
 
   const metrics = useDailyMetrics(formatLocalDate(selectedDate));
   const activeCalories = Math.round(metrics?.activeCalories ?? 0);
-  const effectiveCalorieTarget = targets.calories + activeCalories;
+  const calorieTarget = calorieTargetFrom(targets);
+  const effectiveCalorieTarget = calorieTarget + activeCalories;
 
   const nextAction = isViewingToday
     ? getNextAction({
@@ -90,7 +92,7 @@ export function TodayDashboard() {
       entryCalories: entry.analysis.calories,
       caloriesBefore,
       caloriesAfter: caloriesBefore + entry.analysis.calories,
-      calorieTarget: isViewingToday ? effectiveCalorieTarget : targets.calories,
+      calorieTarget: isViewingToday ? effectiveCalorieTarget : calorieTarget,
       proteinBefore,
       proteinAfter: proteinBefore + entry.analysis.protein,
       proteinTarget: targets.protein,
@@ -224,10 +226,12 @@ export function TodayDashboard() {
             <div {...revealProps(0)}>
               <DailyBudgetCard
                 caloriesConsumed={caloriesConsumed}
-                calorieTarget={targets.calories}
+                calorieTarget={calorieTarget}
                 activeCalories={activeCalories}
                 proteinConsumed={proteinConsumed}
                 proteinTarget={targets.protein}
+                fiberConsumed={fiberConsumed}
+                fiberTarget={targets.fiber}
               />
             </div>
 
@@ -282,7 +286,7 @@ export function TodayDashboard() {
           setCalendarOpen(false);
         }}
         meals={meals}
-        calorieTarget={targets.calories}
+        calorieTarget={calorieTarget}
       />
       <MealDetailSheet
         meal={activeMeal}
