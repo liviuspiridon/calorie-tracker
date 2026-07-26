@@ -15,20 +15,27 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * Two body shapes are accepted, both upserting into daily_metrics keyed on
  * `date`:
  *
- * 1. Legacy single snapshot — unchanged, still what the existing Shortcut
- *    sends: { active: number, weight: number, date?: "YYYY-MM-DD" }.
- *    `date` defaults to the server's UTC calendar day.
+ * 1. Legacy single snapshot — still what the existing Shortcut sends, now
+ *    with an optional body-fat reading (a Withings smart scale syncs this
+ *    into Health alongside weight):
+ *    { active: number, weight: number, body_fat?: number | string, date?: "YYYY-MM-DD" }.
+ *    `date` defaults to the server's UTC calendar day. `bodyFat` is also
+ *    accepted as an alias for `body_fat`, since either could plausibly come
+ *    from a hand-edited Shortcut JSON dictionary. `body_fat` accepts a
+ *    numeric string too (e.g. "18.5") — Shortcuts can serialize a Text
+ *    field holding a single magic variable as a JSON string rather than a
+ *    bare number, depending on exactly how the field was built.
  *
  * 2. Batch of dated samples — additive, for backfilling a day boundary in
  *    one call (e.g. late-night activity that should finalize yesterday's
  *    row alongside today's running total):
- *    { entries: [{ date?: "YYYY-MM-DD", timestamp?: string, active?: number, weight?: number }] }
+ *    { entries: [{ date?: "YYYY-MM-DD", timestamp?: string, active?: number, weight?: number, body_fat?: number | string }] }
  *    Each entry resolves its own calendar day — explicit `date` wins,
  *    otherwise it's derived from `timestamp`'s UTC date — and upserts that
  *    day's row independently, so an entry dated yesterday updates yesterday
  *    while one dated today updates today, in the same request. An entry
- *    only needs whichever of active/weight it's reporting; the other metric
- *    on that day's row is left untouched. Duplicate dates within one
+ *    only needs whichever metrics it's reporting; the others already on
+ *    that day's row are left untouched. Duplicate dates within one
  *    payload: the last entry for a date wins, since Health reports a
  *    cumulative running total per day, not a delta.
  */
@@ -59,14 +66,25 @@ export async function POST(request: Request) {
 }
 
 async function handleLegacySnapshot(body: unknown) {
-  const { active, weight, date } = (body ?? {}) as {
+  const { active, weight, date, ...rest } = (body ?? {}) as {
     active?: unknown;
     weight?: unknown;
     date?: unknown;
+    body_fat?: unknown;
+    bodyFat?: unknown;
   };
+  const rawBodyFat = rest.body_fat ?? rest.bodyFat;
+  const bodyFat = toNonNegativeNumber(rawBodyFat);
+
   if (!isNonNegativeNumber(active) || !isNonNegativeNumber(weight)) {
     return NextResponse.json(
       { error: "Body must be { active: number, weight: number } with non-negative values." },
+      { status: 400 },
+    );
+  }
+  if (rawBodyFat !== undefined && bodyFat === undefined) {
+    return NextResponse.json(
+      { error: "body_fat must be a non-negative number (or numeric string) when provided." },
       { status: 400 },
     );
   }
@@ -77,7 +95,7 @@ async function handleLegacySnapshot(body: unknown) {
   const targetDate = (date as string | undefined) ?? new Date().toISOString().slice(0, 10);
 
   try {
-    await upsertDailyMetrics({ date: targetDate, activeCalories: active, weight });
+    await upsertDailyMetrics({ date: targetDate, activeCalories: active, weight, bodyFat });
   } catch (error) {
     console.error("Failed to upsert daily metrics", error);
     return NextResponse.json(
@@ -86,13 +104,14 @@ async function handleLegacySnapshot(body: unknown) {
     );
   }
 
-  return NextResponse.json({ ok: true, date: targetDate, active, weight });
+  return NextResponse.json({ ok: true, date: targetDate, active, weight, bodyFat });
 }
 
 interface ParsedEntry {
   date: string;
   active?: number;
   weight?: number;
+  bodyFat?: number;
 }
 
 async function handleEntries(rawEntries: unknown) {
@@ -107,7 +126,11 @@ async function handleEntries(rawEntries: unknown) {
       timestamp?: unknown;
       active?: unknown;
       weight?: unknown;
+      body_fat?: unknown;
+      bodyFat?: unknown;
     };
+    const rawBodyFat = entry.body_fat ?? entry.bodyFat;
+    const bodyFat = toNonNegativeNumber(rawBodyFat);
 
     const date = resolveEntryDate(entry.date, entry.timestamp);
     if (!date) {
@@ -128,14 +151,25 @@ async function handleEntries(rawEntries: unknown) {
         { status: 400 },
       );
     }
-    if (entry.active === undefined && entry.weight === undefined) {
+    if (rawBodyFat !== undefined && bodyFat === undefined) {
       return NextResponse.json(
-        { error: `entries[${i}] needs at least one of active/weight.` },
+        { error: `entries[${i}].body_fat must be a non-negative number (or numeric string) when provided.` },
+        { status: 400 },
+      );
+    }
+    if (entry.active === undefined && entry.weight === undefined && bodyFat === undefined) {
+      return NextResponse.json(
+        { error: `entries[${i}] needs at least one of active/weight/body_fat.` },
         { status: 400 },
       );
     }
 
-    parsed.push({ date, active: entry.active as number | undefined, weight: entry.weight as number | undefined });
+    parsed.push({
+      date,
+      active: entry.active as number | undefined,
+      weight: entry.weight as number | undefined,
+      bodyFat,
+    });
   }
 
   const byDate = new Map<string, ParsedEntry>();
@@ -147,6 +181,7 @@ async function handleEntries(rawEntries: unknown) {
         date: entry.date,
         activeCalories: entry.active,
         weight: entry.weight,
+        bodyFat: entry.bodyFat,
       });
     }
   } catch (error) {
@@ -178,6 +213,23 @@ function resolveEntryDate(date: unknown, timestamp: unknown): string | null {
 
 function isNonNegativeNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+/**
+ * Same acceptance as isNonNegativeNumber, but also coerces a numeric
+ * string — Shortcuts can serialize a Text field holding a single magic
+ * variable as a JSON string (e.g. "18.5") rather than a bare number,
+ * depending on exactly how the field was built. Returns undefined for
+ * anything else (including `undefined` itself), so `rawValue !== undefined
+ * && coerced === undefined` reliably means "present but invalid".
+ */
+function toNonNegativeNumber(value: unknown): number | undefined {
+  if (isNonNegativeNumber(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (isNonNegativeNumber(parsed)) return parsed;
+  }
+  return undefined;
 }
 
 /** Constant-time comparison so token guesses can't be timed. */
