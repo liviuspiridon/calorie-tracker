@@ -64,7 +64,7 @@ export function NudgeSheet({
           transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
           transition: dragging ? "none" : undefined,
         }}
-        className="mx-auto flex min-h-[66dvh] w-full flex-col justify-center border-none px-6 pt-6 pb-8 shadow-[0_-12px_40px_-12px_rgba(20,23,15,0.3)] sm:max-w-lg"
+        className="mx-auto flex min-h-[35dvh] w-full flex-col justify-center border-none px-6 pt-6 pb-8 shadow-[0_-12px_40px_-12px_rgba(20,23,15,0.3)] sm:max-w-lg"
       >
         <SheetTitle className="sr-only">Notificare</SheetTitle>
 
