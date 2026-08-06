@@ -102,7 +102,7 @@ export function BodyCompositionPage() {
   return (
     <div
       style={{ ...TODAY_FONT, background: TODAY.bg }}
-      className="min-h-dvh px-7 pt-[22px] pb-16"
+      className="min-h-dvh px-7 pt-[calc(env(safe-area-inset-top)+22px)] pb-[calc(env(safe-area-inset-bottom)+64px)]"
     >
       <div className="mx-auto flex max-w-lg flex-col">
         <Link

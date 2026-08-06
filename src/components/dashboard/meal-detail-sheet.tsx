@@ -11,16 +11,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import type { MealLogEntry } from "@/features/meal-logging/types";
+import { computeItemMacros, type MealLogEntry } from "@/features/meal-logging/types";
 import { TODAY, TODAY_FONT } from "@/lib/today-theme";
 
 const DANGER = "#B3453A";
 
 /**
- * The approved design also shows an "Ingredients" list per meal.
- * MealAnalysis has no ingredients field and the AI pipeline doesn't
- * estimate them — rather than fabricate one, this sheet shows only what's
- * real: description, calories, and the protein/carbs/fat already captured.
+ * The approved design also shows an "Ingredients" list per meal. Meals
+ * logged through the item-by-item builder have real per-ingredient data
+ * (`meal.items`) to show there; meals logged in one shot (old or new) don't,
+ * and the section is simply omitted rather than fabricating a breakdown.
  *
  * The overflow menu isn't part of the approved design either — it's a
  * separate, requested addition — so it's kept deliberately minimal: reuses
@@ -182,6 +182,33 @@ export function MealDetailSheet({
               <div className="w-px" style={{ background: TODAY.hairlineStrong }} />
               <MacroTile label="Fiber" value={meal.analysis.fiber} />
             </div>
+
+            {meal.items && meal.items.length > 0 && (
+              <div className="mt-6">
+                <p
+                  className="font-mono text-[10.5px] font-semibold tracking-[0.14em] uppercase"
+                  style={{ color: TODAY.ink45 }}
+                >
+                  Ingredients
+                </p>
+                <ul className="mt-1">
+                  {meal.items.map((item, index) => (
+                    <li
+                      key={item.id}
+                      className="flex items-center justify-between py-3"
+                      style={index > 0 ? { borderTop: `1px solid ${TODAY.hairline}` } : undefined}
+                    >
+                      <span className="text-[13.5px] font-semibold" style={{ color: TODAY.ink }}>
+                        {item.description}
+                      </span>
+                      <span className="text-[12.5px] font-medium tabular-nums" style={{ color: TODAY.ink45 }}>
+                        {item.grams}g · {computeItemMacros(item).calories} kcal
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         )}
       </SheetContent>

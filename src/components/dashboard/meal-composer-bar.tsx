@@ -2,12 +2,12 @@ import { ArrowUpIcon, MicIcon } from "lucide-react";
 
 import { TODAY } from "@/lib/today-theme";
 
-/** The persistent trigger — tapping anywhere on it opens LogMealSheet's compose step. */
+/** The persistent trigger — tapping anywhere on it opens MealBuilderSheet's building step. */
 export function MealComposerBar({ onOpen }: { onOpen: () => void }) {
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20">
       <div
-        className="pointer-events-auto mx-auto max-w-lg px-7 pt-3 pb-[26px]"
+        className="pointer-events-auto mx-auto max-w-lg px-7 pt-3 pb-[calc(env(safe-area-inset-bottom)+26px)]"
         style={{ background: "linear-gradient(rgba(252,252,250,0), #FCFCFA 26%)" }}
       >
         <button

@@ -4,10 +4,11 @@ A personal health dashboard. Built vertically, feature by feature — each
 sprint ships something real to use, not scaffolding.
 
 **Live today:** a Today dashboard (calories/protein remaining, on-track
-status, a rule-based "what's next" suggestion, today's meals) and AI-assisted
-meal logging (describe a meal in your own words, review/edit the estimate,
-save it). Apple Health and Home Assistant are still contracts, not
-integrations — see their feature READMEs.
+status, a rule-based "what's next" suggestion, today's meals) and
+AI-assisted, iterative meal logging (add ingredients one at a time — text,
+voice, or photo, including reading a nutrition label — then review/adjust
+the whole meal and save). Apple Health and Home Assistant are still
+contracts, not integrations — see their feature READMEs.
 
 ## Stack
 
@@ -50,31 +51,29 @@ Environment variables: copy `.env.example` to `.env.local` when integrations lan
 ```
 src/
 ├── app/                     # Routes only — thin pages that compose components
-│   ├── layout.tsx           # Root: fonts, ThemeProvider, metadata
-│   └── (dashboard)/         # Route group sharing the app shell
-│       ├── layout.tsx       # Sidebar (desktop) + header/sheet nav (mobile)
-│       ├── page.tsx         # Today dashboard
-│       ├── health/          # Placeholder — Apple Health
-│       ├── meals/           # Live — meal log + AI-assisted logging
-│       └── home/            # Placeholder — Home Assistant
+│   ├── layout.tsx           # Root: fonts, ThemeProvider, metadata, viewport
+│   ├── page.tsx             # Today dashboard (the app's root route)
+│   ├── weight/               # Body Composition hub (weight/body fat/BMI)
+│   └── api/metrics/          # Apple Health webhook (bearer-token, upserts daily_metrics)
 ├── components/
 │   ├── ui/                  # shadcn/ui primitives (generic, app-agnostic)
-│   ├── layout/               # App shell: sidebar, header, page header, brand
-│   ├── shared/                # Reusable app-level pieces (EmptyState, …)
-│   ├── dashboard/              # Today dashboard's own composition — reads
-│   │                              goals + meal-logging, doesn't own data
+│   ├── dashboard/             # Today dashboard's own composition — reads
+│   │                             goals + meal-logging + health, doesn't own data
+│   ├── body-composition/        # Body Composition hub's own composition
 │   └── theme/                    # ThemeProvider + ThemeToggle
 ├── features/                      # One folder per domain capability (vertical slices)
-│   ├── apple-health/              # Port: AppleHealthProvider — scaffold only
-│   ├── home-assistant/            # Port: HomeAssistantClient — scaffold only
-│   ├── meal-logging/              # Live: compose -> AI analysis -> review -> save
-│   └── goals/                     # Minimal: today's calorie/protein target + status logic
+│   ├── apple-health/               # Port: AppleHealthProvider — scaffold only
+│   ├── home-assistant/             # Port: HomeAssistantClient — scaffold only
+│   ├── meal-logging/                # Live: iterative item-by-item builder -> AI analysis -> review -> save
+│   ├── goals/                        # Daily targets (BMR/deficit/protein/fiber/height) + status logic
+│   ├── health/                        # Apple Health sync data layer (daily_metrics, weight/body-fat CRUD)
+│   └── nudge/                          # Deterministic post-log feedback (no AI)
 ├── lib/
-│   ├── ai/                        # Provider-agnostic AI layer (AIProvider, ClaudeProvider stub)
-│   ├── env.ts                     # Typed env access
+│   ├── ai/                        # Provider-agnostic AI layer (AIProvider, GeminiProvider)
+│   ├── bmi.ts                     # BMI calculation + WHO classification
+│   ├── supabase.ts                # Supabase client (anon key)
 │   └── utils.ts                   # cn, date/formatting helpers
-├── config/                        # site.ts (metadata), nav.ts (single nav source)
-├── hooks/                         # Shared React hooks (incl. useLocalStorage)
+├── hooks/                         # Shared React hooks (incl. useSpeechRecognition)
 └── types/                         # Shared domain model (MetricSample, …)
 ```
 
@@ -82,8 +81,8 @@ src/
 
 1. **Routes are thin.** Files in `app/` compose components; they don't own logic.
 2. **Features are vertical slices.** Each `src/features/*` folder owns one domain end-to-end. The two integration features (`apple-health`, `home-assistant`) expose a port interface for a future adapter; vendor payloads never leak past that boundary — everything maps to the shared `MetricSample` domain type in `src/types`.
-3. **The dashboard reads, it doesn't own.** `components/dashboard` composes data from `features/meal-logging` and `features/goals`; it holds no domain logic of its own.
-4. **`components/ui` stays generic.** Nothing in there knows about health data. App-specific composition lives in `components/shared`, `components/dashboard`, or inside a feature.
+3. **The dashboard reads, it doesn't own.** `components/dashboard` composes data from `features/meal-logging`, `features/goals`, and `features/health`; it holds no domain logic of its own.
+4. **`components/ui` stays generic.** Nothing in there knows about health data. App-specific composition lives in `components/dashboard`, `components/body-composition`, or inside a feature.
 5. **AI is provider-agnostic.** Anything that calls an LLM depends on `AIProvider` (`src/lib/ai`), never on a vendor SDK directly — see `src/lib/ai/README.md`.
 6. **Secrets stay server-side.** `HOME_ASSISTANT_TOKEN` and `AI_API_KEY` are read only in server code via `src/lib/env.ts`.
 7. **Infrastructure follows features, not the other way around.** No database, auth, or deployment setup gets added until a specific feature actually needs it.

@@ -18,6 +18,6 @@ Auth: `GEMINI_API_KEY` (see `.env.example`, server-side only). The client
 is constructed lazily so a missing key fails the request — surfaced through
 the calling flow's error state — rather than crashing the server at import.
 
-Used today by `src/features/meal-logging` (`server/meal-analysis-service.ts`).
+Used today by `src/features/meal-logging` (`server/meal-item-service.ts`).
 The planned AI coach will depend on the same `AIProvider` interface — that
 sharing is the reason this lives here instead of inside meal-logging.

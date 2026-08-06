@@ -15,7 +15,16 @@ create table if not exists meals (
   protein integer not null,
   carbs integer not null,
   fat integer not null,
-  fiber integer not null default 0
+  fiber integer not null default 0,
+  -- Itemized breakdown from the meal builder: an array of
+  -- { id, description, grams, caloriesPer100g, proteinPer100g,
+  -- carbsPer100g, fatPer100g, fiberPer100g, confidence? } — see MealItem in
+  -- src/features/meal-logging/types.ts. Null for meals logged before the
+  -- builder existed, or logged in one shot without itemization; the
+  -- calories/protein/carbs/fat/fiber columns above are always the
+  -- aggregate total regardless, so every other reader of this table is
+  -- unaffected by whether items is present.
+  items jsonb
 );
 
 create index if not exists meals_created_at_idx on meals (created_at desc);
@@ -24,6 +33,11 @@ create index if not exists meals_created_at_idx on meals (created_at desc);
 -- backfilled to 0 for old rows (fiber was never estimated for them).
 alter table meals
   add column if not exists fiber integer not null default 0;
+
+-- Migration for an existing meals table created before the itemized meal
+-- builder.
+alter table meals
+  add column if not exists items jsonb;
 
 create table if not exists daily_targets (
   id integer primary key,

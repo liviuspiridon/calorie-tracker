@@ -1,11 +1,12 @@
 import { supabase } from "@/lib/supabase";
 import { formatLocalDate } from "@/lib/utils";
 
-import type { MealLogEntry } from "./types";
+import type { MealItem, MealLogEntry } from "./types";
 
 /**
  * Row shape of the existing `meals` table (see supabase/schema.sql). The
- * table stores only the analysis numbers plus two time columns: `created_at`
+ * table stores the analysis numbers, the itemized breakdown (nullable —
+ * absent for legacy/one-shot meals), plus two time columns: `created_at`
  * (full timestamp — maps to loggedAt) and `date` (denormalized local
  * YYYY-MM-DD day string). There are no confidence/note/photo columns, so
  * those MealLogEntry fields don't survive a reload — see types.ts.
@@ -20,6 +21,7 @@ interface MealRow {
   carbs: number;
   fat: number;
   fiber: number;
+  items: MealItem[] | null;
 }
 
 function toEntry(row: MealRow): MealLogEntry {
@@ -34,6 +36,7 @@ function toEntry(row: MealRow): MealLogEntry {
       fat: row.fat,
       fiber: row.fiber,
     },
+    items: row.items ?? undefined,
   };
 }
 
@@ -48,6 +51,7 @@ function toRow(entry: MealLogEntry): MealRow {
     carbs: entry.analysis.carbs,
     fat: entry.analysis.fat,
     fiber: entry.analysis.fiber,
+    items: entry.items ?? null,
   };
 }
 

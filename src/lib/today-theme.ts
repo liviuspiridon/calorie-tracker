@@ -6,7 +6,7 @@ import type { CSSProperties } from "react";
  * the Today screen's own components — the rest of the app keeps its
  * existing token palette (src/app/globals.css), since only Today was
  * designed and approved. Lives in src/lib (not components/dashboard)
- * because it's also consumed by features/meal-logging's LogMealSheet,
+ * because it's also consumed by features/meal-logging's MealBuilderSheet,
  * which the Today screen reuses rather than duplicates.
  *
  * Plain hex/rgba constants, not Tailwind classes or CSS custom properties:

@@ -7,7 +7,7 @@ import { computeDayStatus, getNextAction } from "@/features/goals/lib/daily-prog
 import { calorieTargetFrom, type DailyTargets } from "@/features/goals/types";
 import { useDailyTargets } from "@/features/goals/use-daily-targets";
 import { useDailyMetrics } from "@/features/health/use-daily-metrics";
-import { LogMealSheet } from "@/features/meal-logging/components/log-meal-sheet";
+import { MealBuilderSheet } from "@/features/meal-logging/components/meal-builder-sheet";
 import type { MealLogEntry } from "@/features/meal-logging/types";
 import { useMealLog } from "@/features/meal-logging/use-meal-log";
 import { decideNudge, type Nudge } from "@/features/nudge/nudge";
@@ -171,7 +171,7 @@ export function TodayDashboard() {
   return (
     <div
       style={{ ...TODAY_FONT, background: TODAY.bg }}
-      className="min-h-dvh px-7 pt-[22px] pb-[104px]"
+      className="min-h-dvh px-7 pt-[calc(env(safe-area-inset-top)+22px)] pb-[calc(env(safe-area-inset-bottom)+104px)]"
     >
       <div className="mx-auto flex max-w-lg flex-col">
         <header className="flex items-center justify-between">
@@ -258,7 +258,7 @@ export function TodayDashboard() {
 
       <MealComposerBar onOpen={() => setLogMealOpen(true)} />
 
-      <LogMealSheet
+      <MealBuilderSheet
         open={logMealOpen}
         onOpenChange={handleLogMealOpenChange}
         onSave={handleSaveMeal}

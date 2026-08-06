@@ -33,6 +33,11 @@ export const viewport: Viewport = {
     { media: "(prefers-color-scheme: light)", color: "#fafcfb" },
     { media: "(prefers-color-scheme: dark)", color: "#161a19" },
   ],
+  // Lets the page draw edge-to-edge under the iOS status bar / home
+  // indicator so env(safe-area-inset-*) resolves to real values instead of
+  // 0 — every fixed/top-of-scroll element that needs to clear those areas
+  // relies on this being set.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

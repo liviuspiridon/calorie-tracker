@@ -2,19 +2,19 @@
 
 import { GeminiProvider } from "@/lib/ai/gemini-provider";
 
-import { MealAnalysisService } from "./server/meal-analysis-service";
-import type { MealAnalysis } from "./types";
+import { MealItemService } from "./server/meal-item-service";
+import type { MealItemDraft } from "./types";
 
-const mealAnalysisService = new MealAnalysisService(new GeminiProvider());
+const mealItemService = new MealItemService(new GeminiProvider());
 
 /**
- * The client calls this, gets back a `MealAnalysis` — that contract is
+ * The client calls these, gets back `MealItemDraft`(s) — that contract is
  * final. Everything about *how* that happens (which AI provider, prompt
- * shape, response parsing) lives behind `MealAnalysisService`; this boundary
+ * shape, response parsing) lives behind `MealItemService`; this boundary
  * exists so `GEMINI_API_KEY`, once used, never reaches the client.
  */
-export async function analyzeMeal(text: string): Promise<MealAnalysis> {
-  return mealAnalysisService.analyzeMeal(text);
+export async function analyzeMealItem(text: string): Promise<MealItemDraft> {
+  return mealItemService.analyzeItem(text);
 }
 
 /** Formats Gemini accepts for inline image data. */
@@ -24,10 +24,11 @@ const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
  *  unauthenticated endpoint. */
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
-export async function analyzeMealPhoto(image: {
-  data: string;
-  mimeType: string;
-}): Promise<MealAnalysis> {
+export async function analyzeMealItemPhoto(
+  image: { data: string; mimeType: string },
+  mode: "food" | "label",
+  quantityHint?: string,
+): Promise<MealItemDraft> {
   if (!image?.data) {
     throw new Error("No image data received.");
   }
@@ -39,5 +40,16 @@ export async function analyzeMealPhoto(image: {
     throw new Error("That image is too large to analyze.");
   }
 
-  return mealAnalysisService.analyzeMealPhoto(image);
+  return mealItemService.analyzeItemPhoto(image, mode, quantityHint);
+}
+
+/** Natural-language edit across the whole item list — see MealItemService.editItems. */
+export async function editMealItems(
+  items: MealItemDraft[],
+  instruction: string,
+): Promise<MealItemDraft[]> {
+  if (items.length === 0) {
+    throw new Error("editMealItems requires at least one existing item.");
+  }
+  return mealItemService.editItems(items, instruction);
 }
