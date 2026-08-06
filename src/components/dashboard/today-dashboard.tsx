@@ -10,6 +10,7 @@ import { useDailyMetrics } from "@/features/health/use-daily-metrics";
 import { MealBuilderSheet } from "@/features/meal-logging/components/meal-builder-sheet";
 import type { MealLogEntry } from "@/features/meal-logging/types";
 import { useMealLog } from "@/features/meal-logging/use-meal-log";
+import { generateNudgeMessage } from "@/features/nudge/actions";
 import { decideNudge, type Nudge } from "@/features/nudge/nudge";
 import { TODAY, TODAY_FONT } from "@/lib/today-theme";
 import { cn, formatHeaderDate, formatLocalDate, isSameDay } from "@/lib/utils";
@@ -81,15 +82,20 @@ export function TodayDashboard() {
       })
     : null;
 
-  function maybeNudge(entry: MealLogEntry) {
+  async function maybeNudge(entry: MealLogEntry) {
     const todaysOtherMeals = meals.filter(
       (meal) => isSameDay(new Date(meal.loggedAt), now) && meal.id !== entry.id,
     );
     const caloriesBefore = todaysOtherMeals.reduce((sum, meal) => sum + meal.analysis.calories, 0);
     const proteinBefore = todaysOtherMeals.reduce((sum, meal) => sum + meal.analysis.protein, 0);
 
-    const result = decideNudge({
+    const situation = decideNudge({
+      entryDescription: entry.analysis.description,
       entryCalories: entry.analysis.calories,
+      entryProtein: entry.analysis.protein,
+      entryCarbs: entry.analysis.carbs,
+      entryFat: entry.analysis.fat,
+      entryFiber: entry.analysis.fiber,
       caloriesBefore,
       caloriesAfter: caloriesBefore + entry.analysis.calories,
       calorieTarget: isViewingToday ? effectiveCalorieTarget : calorieTarget,
@@ -99,20 +105,28 @@ export function TodayDashboard() {
       localHour: now.getHours(),
     });
 
-    if (result) {
-      setNudge(result);
-      setNudgeOpen(true);
-    } else {
+    if (!situation) {
       // Silence: just make sure nothing is open. Deliberately does NOT null
       // `nudge` — the sheet keeps rendering the last message during its exit
       // animation, and stale content is overwritten on the next nudge anyway.
       setNudgeOpen(false);
+      return;
+    }
+
+    try {
+      const message = await generateNudgeMessage(situation);
+      setNudge({ scenario: situation.scenario, message });
+      setNudgeOpen(true);
+    } catch (error) {
+      // The meal itself already saved independently — a failed nudge just
+      // means no feedback this time, not a broken save.
+      console.error("Failed to generate nudge message", error);
     }
   }
 
   function handleSaveMeal(entry: MealLogEntry, isNewEntry: boolean) {
     saveMeal(entry).catch((error) => console.error("Failed to save meal", error));
-    if (isNewEntry) maybeNudge(entry);
+    if (isNewEntry) void maybeNudge(entry);
   }
 
   function handleSaveTargets(next: DailyTargets) {
