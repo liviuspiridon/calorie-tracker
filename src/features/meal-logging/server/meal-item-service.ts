@@ -6,11 +6,26 @@ import type { MealItemDraft } from "../types";
 const PER_100G_GUIDELINE = `- grams: your best estimate of the total weight in grams of the portion described/shown.
 - caloriesPer100g/proteinPer100g/carbsPer100g/fatPer100g/fiberPer100g: this food's nutrition density per 100g — a stable reference fact about the food itself, NOT the total for the described portion. The app multiplies by grams/100 to get the total, so get the per-100g rate right; don't pre-multiply by the portion size yourself.`;
 
+/**
+ * Without this, "coffee with 100ml milk" got extracted as one blended item
+ * (e.g. "Coffee with milk", 200g, 48kcal) — a per-100g rate diluted across
+ * the whole cup. That rate is meaningless once the weight slider touches
+ * it: scaling to 600g assumes 600g of *that diluted mixture*, tripling
+ * both the (near-zero-calorie) coffee and the milk together, wildly
+ * inflating calories for what the user meant as "more milk". The fix is to
+ * never let the item's grams include a zero-calorie liquid's volume at
+ * all — the item is just the calorie-bearing part, at its own real
+ * density, so the slider only ever scales something that actually should
+ * scale linearly with calories.
+ */
+const ZERO_CALORIE_BASE_GUIDELINE = `- Zero- or negligible-calorie liquids (water, black coffee, espresso, unsweetened tea, diet soda, etc.) never get an item of their own, and must never be blended into another item's weight or macros. If the description mixes one of these with a calorie-bearing ingredient — e.g. "coffee with 100ml milk", "tea with a spoon of honey" — return ONLY the calorie-bearing ingredient as the item: its own real per-100g nutrition density and its own actual quantity as grams. Example: "coffee with 100ml milk" -> description "Lapte 1.5%" (or similar, named after the ingredient itself, not the drink), grams: 100, using milk's real per-100g values (not diluted across the coffee's volume). Never combine the two into one blended item, and never let the zero-calorie liquid's volume inflate the item's grams.`;
+
 const TEXT_ITEM_SYSTEM_PROMPT = `You are a nutrition analyst for a personal calorie-tracking app. The user is adding ONE ingredient to a meal they're building, described in their own words (e.g. "300g tomatoes", "2 eggs", "a slice of sourdough").
 
 Guidelines:
 - description: a concise, cleaned-up name for this one item.
 ${PER_100G_GUIDELINE}
+${ZERO_CALORIE_BASE_GUIDELINE}
 - Use typical reference weights when the quantity is given by count ("2 eggs") rather than weight.
 - confidence: "high" when the food and quantity are specific and typical, "medium" when the quantity had to be assumed, "low" when the food itself is ambiguous.`;
 
@@ -19,6 +34,7 @@ const PHOTO_FOOD_ITEM_SYSTEM_PROMPT = `You are a nutrition analyst for a persona
 Guidelines:
 - description: a concise name for what's shown, e.g. "Grilled chicken breast".
 ${PER_100G_GUIDELINE}
+${ZERO_CALORIE_BASE_GUIDELINE}
 - Estimate the portion size from visual cues (plate/utensil scale, container volume, height of the pile) unless the user gave you a quantity to use instead.
 - confidence: "high" when the food and portion are clearly readable, "medium" when the portion had to be assumed, "low" when the photo is unclear or may not be food at all.`;
 
@@ -38,6 +54,7 @@ Guidelines:
 - If the instruction describes swapping one food for a different one, update description and the per-100g macro fields to match the new food — keep the same grams unless the instruction also changes the quantity.
 - If the instruction asks to remove an item, omit it from the returned array.
 - If the instruction describes adding a new ingredient, append it as a new item using the same per-100g/grams shape as the others.
+${ZERO_CALORIE_BASE_GUIDELINE}
 - Every returned item must have: description, grams, caloriesPer100g, proteinPer100g, carbsPer100g, fatPer100g, fiberPer100g, confidence.`;
 
 const MEAL_ITEM_SCHEMA_FIELDS = {
