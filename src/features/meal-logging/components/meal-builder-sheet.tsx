@@ -683,13 +683,14 @@ function ItemCard({
                 style={{ background: TODAY.bg, color: TODAY.ink }}
               />
               <span className="text-[12px] font-medium" style={{ color: TODAY.ink40 }}>
-                g
+                {item.unit || "g"}
               </span>
             </div>
           </div>
         ) : (
           <p className="mt-0.5 text-[12px] font-medium" style={{ color: TODAY.ink45 }}>
-            {item.grams}g
+            {item.grams}
+            {item.unit || "g"}
           </p>
         )}
       </div>

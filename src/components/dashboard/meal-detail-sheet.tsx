@@ -202,7 +202,8 @@ export function MealDetailSheet({
                         {item.description}
                       </span>
                       <span className="text-[12.5px] font-medium tabular-nums" style={{ color: TODAY.ink45 }}>
-                        {item.grams}g · {computeItemMacros(item).calories} kcal
+                        {item.grams}
+                        {item.unit || "g"} · {computeItemMacros(item).calories} kcal
                       </span>
                     </li>
                   ))}

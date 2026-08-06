@@ -4,6 +4,7 @@ import type { AIImageInput, AIProvider } from "@/lib/ai/provider";
 import type { MealItemDraft } from "../types";
 
 const PER_100G_GUIDELINE = `- grams: your best estimate of the total weight in grams of the portion described/shown.
+- unit: "ml" when the item is a liquid you'd naturally measure by volume (milk, water, coffee, juice, oil, sauces, etc.), "g" for solids. This only changes how the amount is displayed — \`grams\` is always the same number either way (1ml treated as 1g).
 - caloriesPer100g/proteinPer100g/carbsPer100g/fatPer100g/fiberPer100g: this food's nutrition density per 100g — a stable reference fact about the food itself, NOT the total for the described portion. The app multiplies by grams/100 to get the total, so get the per-100g rate right; don't pre-multiply by the portion size yourself.`;
 
 /**
@@ -55,11 +56,17 @@ Guidelines:
 - If the instruction asks to remove an item, omit it from the returned array.
 - If the instruction describes adding a new ingredient, append it as a new item using the same per-100g/grams shape as the others.
 ${ZERO_CALORIE_BASE_GUIDELINE}
-- Every returned item must have: description, grams, caloriesPer100g, proteinPer100g, carbsPer100g, fatPer100g, fiberPer100g, confidence.`;
+- unit is "ml" for liquids, "g" for solids — keep an item's existing unit unless the instruction changes what the food is, in which case set unit to match the new food.
+- Every returned item must have: description, grams, unit, caloriesPer100g, proteinPer100g, carbsPer100g, fatPer100g, fiberPer100g, confidence.`;
 
 const MEAL_ITEM_SCHEMA_FIELDS = {
   description: { type: "string", description: "Concise name for this one item" },
   grams: { type: "integer", description: "Estimated portion weight in grams" },
+  unit: {
+    type: "string",
+    enum: ["g", "ml"],
+    description: "Display unit — \"ml\" for liquids, \"g\" for solids. Doesn't change the `grams` number.",
+  },
   caloriesPer100g: { type: "integer", description: "kcal per 100g of this food" },
   proteinPer100g: { type: "integer", description: "Protein grams per 100g of this food" },
   carbsPer100g: { type: "integer", description: "Carbohydrate grams per 100g of this food" },
@@ -71,6 +78,7 @@ const MEAL_ITEM_SCHEMA_FIELDS = {
 const MEAL_ITEM_SCHEMA_REQUIRED = [
   "description",
   "grams",
+  "unit",
   "caloriesPer100g",
   "proteinPer100g",
   "carbsPer100g",
@@ -217,6 +225,7 @@ function draftFromParsed(parsed: unknown, fallbackDescription: string): MealItem
         ? value.description
         : fallbackDescription,
     grams: toPositiveNumber(value.grams, 100),
+    unit: toUnit(value.unit),
     caloriesPer100g: toNonNegativeNumber(value.caloriesPer100g),
     proteinPer100g: toNonNegativeNumber(value.proteinPer100g),
     carbsPer100g: toNonNegativeNumber(value.carbsPer100g),
@@ -230,6 +239,7 @@ function emptyDraft(fallbackDescription: string): MealItemDraft {
   return {
     description: fallbackDescription,
     grams: 100,
+    unit: "g",
     caloriesPer100g: 0,
     proteinPer100g: 0,
     carbsPer100g: 0,
@@ -251,4 +261,8 @@ function toPositiveNumber(value: unknown, fallback: number): number {
 
 function toConfidence(value: unknown): MealItemDraft["confidence"] {
   return value === "low" || value === "medium" || value === "high" ? value : "low";
+}
+
+function toUnit(value: unknown): MealItemDraft["unit"] {
+  return value === "ml" ? "ml" : "g";
 }

@@ -41,6 +41,14 @@ export interface MealItem {
   id: string;
   description: string;
   grams: number;
+  /**
+   * Display unit only — "ml" for liquids (milk, water, coffee, juice, oil),
+   * "g" for solids. `grams` and every per-100g rate are unaffected (1ml is
+   * always treated as 1g), so no calculation changes with the unit; it only
+   * changes what the UI prints next to the number. Absent means "g", same
+   * as every item created before this field existed.
+   */
+  unit?: "g" | "ml";
   caloriesPer100g: number;
   proteinPer100g: number;
   carbsPer100g: number;
