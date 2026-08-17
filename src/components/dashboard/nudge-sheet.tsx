@@ -87,7 +87,10 @@ export function NudgeSheet({
         {nudge && (
           <p
             aria-live="polite"
-            className="pr-8 text-[15px] leading-relaxed font-semibold"
+            // whitespace-pre-line turns the \n\n line breaks the AI prompt
+            // asks for into actual visual breaks — by default JSX text
+            // collapses newlines to a single space like any HTML text node.
+            className="pr-8 text-[15px] leading-relaxed font-semibold whitespace-pre-line"
             style={{ color: TODAY.ink }}
           >
             {nudge.message}
