@@ -16,28 +16,20 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * `date`:
  *
  * 1. Legacy single snapshot — still what the existing Shortcut sends, now
- *    with optional body-fat and muscle-mass readings (a Withings smart
- *    scale syncs these into Health alongside weight):
- *    { active: number, weight: number, body_fat?: number | string, muscle_mass?: number | string, date?: "YYYY-MM-DD" }.
- *    `date` defaults to the server's UTC calendar day. `bodyFat`/`muscleMass`
- *    are also accepted as aliases for `body_fat`/`muscle_mass`, since either
- *    could plausibly come from a hand-edited Shortcut JSON dictionary. Both
- *    accept a numeric string too (e.g. "18.5") — Shortcuts can serialize a
- *    Text field holding a single magic variable as a JSON string rather
- *    than a bare number, depending on exactly how the field was built. Both
- *    are entirely optional — an existing Shortcut payload that only ever
- *    sends { active, weight } keeps working unchanged.
- *
- *    `lean_body_mass` is never read from the payload — it's derived
- *    server-side as `weight * (1 - body_fat / 100)`, rounded to 1 decimal,
- *    whenever both weight and body_fat are present on the same
- *    request/entry; otherwise it's left absent so it doesn't clobber a
- *    value already stored for that day.
+ *    with an optional body-fat reading (a Withings smart scale syncs this
+ *    into Health alongside weight):
+ *    { active: number, weight: number, body_fat?: number | string, date?: "YYYY-MM-DD" }.
+ *    `date` defaults to the server's UTC calendar day. `bodyFat` is also
+ *    accepted as an alias for `body_fat`, since either could plausibly come
+ *    from a hand-edited Shortcut JSON dictionary. `body_fat` accepts a
+ *    numeric string too (e.g. "18.5") — Shortcuts can serialize a Text
+ *    field holding a single magic variable as a JSON string rather than a
+ *    bare number, depending on exactly how the field was built.
  *
  * 2. Batch of dated samples — additive, for backfilling a day boundary in
  *    one call (e.g. late-night activity that should finalize yesterday's
  *    row alongside today's running total):
- *    { entries: [{ date?: "YYYY-MM-DD", timestamp?: string, active?: number, weight?: number, body_fat?: number | string, muscle_mass?: number | string }] }
+ *    { entries: [{ date?: "YYYY-MM-DD", timestamp?: string, active?: number, weight?: number, body_fat?: number | string }] }
  *    Each entry resolves its own calendar day — explicit `date` wins,
  *    otherwise it's derived from `timestamp`'s UTC date — and upserts that
  *    day's row independently, so an entry dated yesterday updates yesterday
@@ -45,8 +37,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  *    only needs whichever metrics it's reporting; the others already on
  *    that day's row are left untouched. Duplicate dates within one
  *    payload: the last entry for a date wins, since Health reports a
- *    cumulative running total per day, not a delta. `lean_body_mass` is
- *    derived per-entry, same rule as above.
+ *    cumulative running total per day, not a delta.
  */
 export async function POST(request: Request) {
   const expected = process.env.METRICS_WEBHOOK_TOKEN;
@@ -81,13 +72,9 @@ async function handleLegacySnapshot(body: unknown) {
     date?: unknown;
     body_fat?: unknown;
     bodyFat?: unknown;
-    muscle_mass?: unknown;
-    muscleMass?: unknown;
   };
   const rawBodyFat = rest.body_fat ?? rest.bodyFat;
   const bodyFat = toNonNegativeNumber(rawBodyFat);
-  const rawMuscleMass = rest.muscle_mass ?? rest.muscleMass;
-  const muscleMass = toNonNegativeNumber(rawMuscleMass);
 
   if (!isNonNegativeNumber(active) || !isNonNegativeNumber(weight)) {
     return NextResponse.json(
@@ -101,28 +88,14 @@ async function handleLegacySnapshot(body: unknown) {
       { status: 400 },
     );
   }
-  if (rawMuscleMass !== undefined && muscleMass === undefined) {
-    return NextResponse.json(
-      { error: "muscle_mass must be a non-negative number (or numeric string) when provided." },
-      { status: 400 },
-    );
-  }
   if (date !== undefined && (typeof date !== "string" || !DATE_RE.test(date))) {
     return NextResponse.json({ error: "date must be YYYY-MM-DD when provided." }, { status: 400 });
   }
 
-  const leanBodyMass = bodyFat !== undefined ? computeLeanBodyMass(weight, bodyFat) : undefined;
   const targetDate = (date as string | undefined) ?? new Date().toISOString().slice(0, 10);
 
   try {
-    await upsertDailyMetrics({
-      date: targetDate,
-      activeCalories: active,
-      weight,
-      bodyFat,
-      muscleMass,
-      leanBodyMass,
-    });
+    await upsertDailyMetrics({ date: targetDate, activeCalories: active, weight, bodyFat });
   } catch (error) {
     console.error("Failed to upsert daily metrics", error);
     return NextResponse.json(
@@ -131,7 +104,7 @@ async function handleLegacySnapshot(body: unknown) {
     );
   }
 
-  return NextResponse.json({ ok: true, date: targetDate, active, weight, bodyFat, muscleMass, leanBodyMass });
+  return NextResponse.json({ ok: true, date: targetDate, active, weight, bodyFat });
 }
 
 interface ParsedEntry {
@@ -139,8 +112,6 @@ interface ParsedEntry {
   active?: number;
   weight?: number;
   bodyFat?: number;
-  muscleMass?: number;
-  leanBodyMass?: number;
 }
 
 async function handleEntries(rawEntries: unknown) {
@@ -157,13 +128,9 @@ async function handleEntries(rawEntries: unknown) {
       weight?: unknown;
       body_fat?: unknown;
       bodyFat?: unknown;
-      muscle_mass?: unknown;
-      muscleMass?: unknown;
     };
     const rawBodyFat = entry.body_fat ?? entry.bodyFat;
     const bodyFat = toNonNegativeNumber(rawBodyFat);
-    const rawMuscleMass = entry.muscle_mass ?? entry.muscleMass;
-    const muscleMass = toNonNegativeNumber(rawMuscleMass);
 
     const date = resolveEntryDate(entry.date, entry.timestamp);
     if (!date) {
@@ -190,37 +157,18 @@ async function handleEntries(rawEntries: unknown) {
         { status: 400 },
       );
     }
-    if (rawMuscleMass !== undefined && muscleMass === undefined) {
+    if (entry.active === undefined && entry.weight === undefined && bodyFat === undefined) {
       return NextResponse.json(
-        { error: `entries[${i}].muscle_mass must be a non-negative number (or numeric string) when provided.` },
+        { error: `entries[${i}] needs at least one of active/weight/body_fat.` },
         { status: 400 },
       );
     }
-    if (
-      entry.active === undefined &&
-      entry.weight === undefined &&
-      bodyFat === undefined &&
-      muscleMass === undefined
-    ) {
-      return NextResponse.json(
-        { error: `entries[${i}] needs at least one of active/weight/body_fat/muscle_mass.` },
-        { status: 400 },
-      );
-    }
-
-    const entryWeight = typeof entry.weight === "number" ? entry.weight : undefined;
-    const leanBodyMass =
-      bodyFat !== undefined && entryWeight !== undefined
-        ? computeLeanBodyMass(entryWeight, bodyFat)
-        : undefined;
 
     parsed.push({
       date,
       active: entry.active as number | undefined,
-      weight: entryWeight,
+      weight: entry.weight as number | undefined,
       bodyFat,
-      muscleMass,
-      leanBodyMass,
     });
   }
 
@@ -234,8 +182,6 @@ async function handleEntries(rawEntries: unknown) {
         activeCalories: entry.active,
         weight: entry.weight,
         bodyFat: entry.bodyFat,
-        muscleMass: entry.muscleMass,
-        leanBodyMass: entry.leanBodyMass,
       });
     }
   } catch (error) {
@@ -263,11 +209,6 @@ function resolveEntryDate(date: unknown, timestamp: unknown): string | null {
     return parsed.toISOString().slice(0, 10);
   }
   return null;
-}
-
-/** Rounded to 1 decimal, matching the manual-entry precision used elsewhere in the app. */
-function computeLeanBodyMass(weight: number, bodyFatPercent: number): number {
-  return Math.round(weight * (1 - bodyFatPercent / 100) * 10) / 10;
 }
 
 function isNonNegativeNumber(value: unknown): value is number {

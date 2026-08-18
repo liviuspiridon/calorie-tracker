@@ -6,13 +6,10 @@ import type { RemoteStatus } from "@/lib/supabase";
 
 import {
   deleteBodyFatEntry,
-  deleteMuscleMassEntry,
   deleteWeightEntry,
   fetchBodyFatHistory,
-  fetchMuscleMassHistory,
   fetchWeightHistory,
   upsertBodyFatEntry,
-  upsertMuscleMassEntry,
   upsertWeightEntry,
   type BodyMetricEntry,
 } from "./data";
@@ -92,8 +89,4 @@ export function useWeightHistory(limit = 60) {
 
 export function useBodyFatHistory(limit = 60) {
   return useMetricHistory(fetchBodyFatHistory, upsertBodyFatEntry, deleteBodyFatEntry, limit);
-}
-
-export function useMuscleMassHistory(limit = 60) {
-  return useMetricHistory(fetchMuscleMassHistory, upsertMuscleMassEntry, deleteMuscleMassEntry, limit);
 }

@@ -6,11 +6,7 @@ import { ArrowLeftIcon, PlusIcon } from "lucide-react";
 
 import { useDailyTargets } from "@/features/goals/use-daily-targets";
 import type { BodyMetricEntry } from "@/features/health/data";
-import {
-  useBodyFatHistory,
-  useMuscleMassHistory,
-  useWeightHistory,
-} from "@/features/health/use-body-metric-history";
+import { useBodyFatHistory, useWeightHistory } from "@/features/health/use-body-metric-history";
 import { BMI_CATEGORY_LABEL, classifyBmi, computeBmi, type BmiCategory } from "@/lib/bmi";
 import { TODAY, TODAY_FONT } from "@/lib/today-theme";
 
@@ -19,12 +15,11 @@ import { TrendChart } from "./trend-chart";
 
 const DANGER = "#B3453A";
 
-type Tab = "weight" | "bodyFat" | "muscleMass" | "bmi";
+type Tab = "weight" | "bodyFat" | "bmi";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "weight", label: "Weight" },
   { id: "bodyFat", label: "Body Fat" },
-  { id: "muscleMass", label: "Muscle" },
   { id: "bmi", label: "BMI" },
 ];
 
@@ -40,9 +35,8 @@ const BMI_BADGE_STYLE: Record<BmiCategory, { text: string; bg: string }> = {
  * replaces (weight-page.tsx) — deliberately NOT nested under the legacy
  * (dashboard) route group.
  *
- * Weight, Body Fat, and Muscle Mass are full CRUD tabs over the same
- * daily_metrics rows the Apple Health webhook writes to. BMI is
- * derived-only: it's computed
+ * Weight and Body Fat are full CRUD tabs over the same daily_metrics rows
+ * the Apple Health webhook writes to. BMI is derived-only: it's computed
  * from each weight entry + the current height (no manual input, per spec),
  * so it has no add button and its list rows aren't tappable.
  */
@@ -53,7 +47,6 @@ export function BodyCompositionPage() {
 
   const weight = useWeightHistory();
   const bodyFat = useBodyFatHistory();
-  const muscleMass = useMuscleMassHistory();
   const { targets } = useDailyTargets();
 
   const bmiEntries: BodyMetricEntry[] = React.useMemo(
@@ -70,9 +63,7 @@ export function BodyCompositionPage() {
       ? { entries: weight.entries, status: weight.status, retry: weight.retry }
       : tab === "bodyFat"
         ? { entries: bodyFat.entries, status: bodyFat.status, retry: bodyFat.retry }
-        : tab === "muscleMass"
-          ? { entries: muscleMass.entries, status: muscleMass.status, retry: muscleMass.retry }
-          : { entries: bmiEntries, status: weight.status, retry: weight.retry };
+        : { entries: bmiEntries, status: weight.status, retry: weight.retry };
 
   const chronological = React.useMemo(() => [...active.entries].reverse(), [active.entries]);
   const latest = active.entries[0] ?? null;
@@ -82,9 +73,7 @@ export function BodyCompositionPage() {
       ? { unit: "kg", decimals: 1, label: "Latest weight", step: 0.1 }
       : tab === "bodyFat"
         ? { unit: "%", decimals: 1, label: "Latest body fat", step: 0.1 }
-        : tab === "muscleMass"
-          ? { unit: "%", decimals: 1, label: "Latest muscle mass", step: 0.1 }
-          : { unit: "", decimals: 1, label: "Current BMI", step: 0.1 };
+        : { unit: "", decimals: 1, label: "Current BMI", step: 0.1 };
 
   function openAddEntry() {
     setEditingEntry(null);
@@ -96,24 +85,18 @@ export function BodyCompositionPage() {
     setEntrySheetOpen(true);
   }
 
-  function crudHookFor(t: Tab) {
-    return t === "bodyFat" ? bodyFat : t === "muscleMass" ? muscleMass : weight;
-  }
-
   function handleSaveEntry(date: string, value: number, previousDate: string | null) {
-    crudHookFor(tab)
-      .saveEntry(date, value, previousDate)
-      .catch((error) => {
-        console.error("Failed to save entry", error);
-      });
+    const hook = tab === "bodyFat" ? bodyFat : weight;
+    hook.saveEntry(date, value, previousDate).catch((error) => {
+      console.error("Failed to save entry", error);
+    });
   }
 
   function handleDeleteEntry(date: string) {
-    crudHookFor(tab)
-      .deleteEntry(date)
-      .catch((error) => {
-        console.error("Failed to delete entry", error);
-      });
+    const hook = tab === "bodyFat" ? bodyFat : weight;
+    hook.deleteEntry(date).catch((error) => {
+      console.error("Failed to delete entry", error);
+    });
   }
 
   return (
@@ -318,8 +301,8 @@ export function BodyCompositionPage() {
           key={tab}
           open={entrySheetOpen}
           onOpenChange={setEntrySheetOpen}
-          title={tab === "weight" ? "Log weight" : tab === "bodyFat" ? "Log body fat" : "Log muscle mass"}
-          unit={tab === "weight" ? "Weight (kg)" : tab === "bodyFat" ? "Body fat (%)" : "Muscle mass (%)"}
+          title={tab === "weight" ? "Log weight" : "Log body fat"}
+          unit={tab === "weight" ? "Weight (kg)" : "Body fat (%)"}
           step={0.1}
           entry={editingEntry}
           onSave={handleSaveEntry}
