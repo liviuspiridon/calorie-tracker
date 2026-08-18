@@ -12,7 +12,6 @@ import { TODAY, TODAY_FONT } from "@/lib/today-theme";
 
 import { MetricEntrySheet } from "./metric-entry-sheet";
 import { MetricOverview } from "./metric-overview";
-import { TrendChart } from "./trend-chart";
 
 const DANGER = "#B3453A";
 
@@ -66,15 +65,33 @@ export function BodyCompositionPage() {
         ? { entries: bodyFat.entries, status: bodyFat.status, retry: bodyFat.retry }
         : { entries: bmiEntries, status: weight.status, retry: weight.retry };
 
-  const chronological = React.useMemo(() => [...active.entries].reverse(), [active.entries]);
-  const latest = active.entries[0] ?? null;
-
   const tabConfig =
     tab === "weight"
-      ? { unit: "kg", decimals: 1, label: "Latest weight", step: 0.1 }
+      ? {
+          unit: "kg",
+          decimals: 1,
+          label: "Latest weight",
+          step: 0.1,
+          domainPad: 1,
+          dateCaptionPrefix: "Last logged",
+        }
       : tab === "bodyFat"
-        ? { unit: "%", decimals: 1, label: "Latest body fat", step: 0.1 }
-        : { unit: "", decimals: 1, label: "Current BMI", step: 0.1 };
+        ? {
+            unit: "%",
+            decimals: 1,
+            label: "Latest body fat",
+            step: 0.1,
+            domainPad: 1,
+            dateCaptionPrefix: "Last logged",
+          }
+        : {
+            unit: "",
+            decimals: 1,
+            label: "Current BMI",
+            step: 0.1,
+            domainPad: 0.5,
+            dateCaptionPrefix: "As of",
+          };
 
   function openAddEntry() {
     setEditingEntry(null);
@@ -161,73 +178,15 @@ export function BodyCompositionPage() {
           <div className="mt-6 h-[360px]" />
         ) : (
           <>
-            {tab === "weight" || tab === "bodyFat" ? (
-              <MetricOverview
-                key={tab}
-                entries={tab === "weight" ? weight.entries : bodyFat.entries}
-                unit={tabConfig.unit}
-                heroLabel={tabConfig.label}
-              />
-            ) : (
-              <div
-                style={{ background: TODAY.surface, borderRadius: 26 }}
-                className="mt-6 px-[22px] pt-6 pb-[26px]"
-              >
-                <div className="flex items-center gap-[9px]">
-                  <span
-                    style={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: "50%",
-                      background: TODAY.clay,
-                    }}
-                  />
-                  <span
-                    className="font-mono text-[11px] font-semibold tracking-[0.15em] uppercase"
-                    style={{ color: TODAY.ink45 }}
-                  >
-                    {tabConfig.label}
-                  </span>
-                </div>
-
-                <div className="mt-3 flex items-baseline gap-[11px]">
-                  {latest ? (
-                    <>
-                      <span
-                        className="text-[78px] leading-[0.82] font-extrabold tracking-[-0.05em] tabular-nums"
-                        style={{ color: TODAY.ink }}
-                      >
-                        {formatValue(latest.value, tabConfig.decimals)}
-                      </span>
-                      {tabConfig.unit && (
-                        <span className="text-base font-semibold" style={{ color: TODAY.ink40 }}>
-                          {tabConfig.unit}
-                        </span>
-                      )}
-                      {tab === "bmi" && <BmiBadge bmi={latest.value} />}
-                    </>
-                  ) : (
-                    <span className="text-[15px] font-medium" style={{ color: TODAY.ink45 }}>
-                      Nothing logged yet
-                    </span>
-                  )}
-                </div>
-
-                {latest && (
-                  <p className="mt-1 text-[12px] font-medium" style={{ color: TODAY.ink40 }}>
-                    {tab === "bmi" ? "As of" : "Last logged"} {formatLogDate(latest.date)}
-                  </p>
-                )}
-
-                <div className="mt-7">
-                  <TrendChart
-                    entries={chronological}
-                    unit={tabConfig.unit || "BMI"}
-                    emptyLabel={tab === "bmi" ? "Log a weight entry to see BMI" : "No data yet"}
-                  />
-                </div>
-              </div>
-            )}
+            <MetricOverview
+              key={tab}
+              entries={active.entries}
+              unit={tabConfig.unit}
+              heroLabel={tabConfig.label}
+              domainPad={tabConfig.domainPad}
+              dateCaptionPrefix={tabConfig.dateCaptionPrefix}
+              renderBadge={tab === "bmi" ? (value) => <BmiBadge bmi={value} /> : undefined}
+            />
 
             <div className="mt-8 h-px" style={{ background: TODAY.hairlineSoft }} />
 

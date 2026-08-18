@@ -28,18 +28,24 @@ const PERIODS: { id: Period; label: string; days: number }[] = [
  * existing per-tab config; `domainPad` is the Apple-Health-style vertical
  * breathing room around the period's data (not a hard-scaled 0-based axis)
  * — defaults to 1, which fits both weight (kg) and body fat (%) for this
- * app's typical fluctuation range.
+ * app's typical fluctuation range. `renderBadge`, if given, renders next
+ * to the hero number (e.g. BMI's category badge) — kept out of this
+ * generic component's own knowledge of what a badge means.
  */
 export function MetricOverview({
   entries,
   unit,
   heroLabel,
   domainPad = 1,
+  dateCaptionPrefix = "Last logged",
+  renderBadge,
 }: {
   entries: BodyMetricEntry[];
   unit: string;
   heroLabel: string;
   domainPad?: number;
+  dateCaptionPrefix?: string;
+  renderBadge?: (value: number) => React.ReactNode;
 }) {
   const [period, setPeriod] = React.useState<Period>("month");
   const latest = entries[0] ?? null;
@@ -118,9 +124,12 @@ export function MetricOverview({
               >
                 {formatValue(latest.value)}
               </span>
-              <span className="text-base font-semibold" style={{ color: TODAY.ink40 }}>
-                {unit}
-              </span>
+              {unit && (
+                <span className="text-base font-semibold" style={{ color: TODAY.ink40 }}>
+                  {unit}
+                </span>
+              )}
+              {renderBadge?.(latest.value)}
             </>
           ) : (
             <span className="text-[15px] font-medium" style={{ color: TODAY.ink45 }}>
@@ -131,14 +140,14 @@ export function MetricOverview({
 
         {latest && (
           <p className="mt-1 text-[12px] font-medium" style={{ color: TODAY.ink40 }}>
-            Last logged {formatLogDate(latest.date)}
+            {dateCaptionPrefix} {formatLogDate(latest.date)}
           </p>
         )}
 
         {latest && (
           <p className="mt-3 text-[12.5px] font-semibold" style={{ color: TODAY.ink45 }}>
             {stats.avg !== null
-              ? `Avg this ${period}: ${formatValue(stats.avg)} ${unit}`
+              ? `Avg this ${period}: ${withUnit(formatValue(stats.avg), unit)}`
               : `No data logged this ${period}`}
           </p>
         )}
@@ -157,9 +166,9 @@ export function MetricOverview({
 
         {stats.avg !== null && (
           <div className="mt-6 grid grid-cols-4 gap-2">
-            <StatTile label="Min" value={`${formatValue(stats.min)} ${unit}`} />
-            <StatTile label="Max" value={`${formatValue(stats.max)} ${unit}`} />
-            <StatTile label="Avg" value={`${formatValue(stats.avg)} ${unit}`} />
+            <StatTile label="Min" value={withUnit(formatValue(stats.min), unit)} />
+            <StatTile label="Max" value={withUnit(formatValue(stats.max), unit)} />
+            <StatTile label="Avg" value={withUnit(formatValue(stats.avg), unit)} />
             <DeltaTile value={stats.delta ?? 0} unit={unit} />
           </div>
         )}
@@ -203,7 +212,7 @@ function DeltaTile({ value, unit }: { value: number; unit: string }) {
       >
         {Icon && <Icon className="size-3" strokeWidth={3} />}
         {sign}
-        {rounded.toFixed(1)} {unit}
+        {withUnit(rounded.toFixed(1), unit)}
       </span>
     </div>
   );
@@ -212,6 +221,11 @@ function DeltaTile({ value, unit }: { value: number; unit: string }) {
 /** Apple Health syncs weight with long floating-point tails — round for display, never store the rounded value. */
 function formatValue(value: number): string {
   return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
+/** BMI has no unit — omit the trailing space rather than print e.g. "27 ". */
+function withUnit(value: string, unit: string): string {
+  return unit ? `${value} ${unit}` : value;
 }
 
 function formatLogDate(dateKey: string): string {
