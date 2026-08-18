@@ -110,14 +110,17 @@ create policy "anon full access to daily_targets"
 
 -- Daily Apple Health metrics, synced by an iOS Shortcut posting to
 -- /api/metrics (bearer-token auth — see METRICS_WEBHOOK_TOKEN in
--- .env.example), plus manually-logged weight/body_fat entries from the
--- Body Composition hub. One row per calendar day, upserted on date. user_id
--- is null for now — Balance is single-user with no auth; the column exists
--- so a future multi-user shape doesn't need a migration.
+-- .env.example), plus manually-logged weight/body_fat/muscle_mass entries
+-- from the Body Composition hub. lean_body_mass is webhook-only for now —
+-- accepted and persisted, but with no Body Composition hub tab yet. One row
+-- per calendar day, upserted on date. user_id is null for now — Balance is
+-- single-user with no auth; the column exists so a future multi-user shape
+-- doesn't need a migration.
 --
--- "Deleting" a weight or body_fat entry from the Body Composition hub nulls
--- that column for the date rather than deleting the row, since the row may
--- still hold the other metric (or active_calories from the Health sync).
+-- "Deleting" a weight/body_fat/muscle_mass entry from the Body Composition
+-- hub nulls that column for the date rather than deleting the row, since
+-- the row may still hold the other metrics (or active_calories from the
+-- Health sync).
 create table if not exists daily_metrics (
   id uuid primary key default gen_random_uuid(),
   user_id uuid,
@@ -125,6 +128,8 @@ create table if not exists daily_metrics (
   active_calories numeric,
   weight numeric,
   body_fat numeric,
+  muscle_mass numeric,
+  lean_body_mass numeric,
   updated_at timestamptz not null default now()
 );
 
@@ -132,6 +137,16 @@ create table if not exists daily_metrics (
 -- tracking.
 alter table daily_metrics
   add column if not exists body_fat numeric;
+
+-- Migration for an existing daily_metrics table created before muscle mass
+-- tracking.
+alter table daily_metrics
+  add column if not exists muscle_mass numeric;
+
+-- Migration for an existing daily_metrics table created before lean body
+-- mass tracking.
+alter table daily_metrics
+  add column if not exists lean_body_mass numeric;
 
 alter table daily_metrics enable row level security;
 
