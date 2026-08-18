@@ -11,8 +11,8 @@ import { BMI_CATEGORY_LABEL, classifyBmi, computeBmi, type BmiCategory } from "@
 import { TODAY, TODAY_FONT } from "@/lib/today-theme";
 
 import { MetricEntrySheet } from "./metric-entry-sheet";
+import { MetricOverview } from "./metric-overview";
 import { TrendChart } from "./trend-chart";
-import { WeightOverview } from "./weight-overview";
 
 const DANGER = "#B3453A";
 
@@ -47,7 +47,7 @@ export function BodyCompositionPage() {
   const [editingEntry, setEditingEntry] = React.useState<BodyMetricEntry | null>(null);
 
   const weight = useWeightHistory(400);
-  const bodyFat = useBodyFatHistory();
+  const bodyFat = useBodyFatHistory(400);
   const { targets } = useDailyTargets();
 
   const bmiEntries: BodyMetricEntry[] = React.useMemo(
@@ -161,8 +161,13 @@ export function BodyCompositionPage() {
           <div className="mt-6 h-[360px]" />
         ) : (
           <>
-            {tab === "weight" ? (
-              <WeightOverview entries={weight.entries} />
+            {tab === "weight" || tab === "bodyFat" ? (
+              <MetricOverview
+                key={tab}
+                entries={tab === "weight" ? weight.entries : bodyFat.entries}
+                unit={tabConfig.unit}
+                heroLabel={tabConfig.label}
+              />
             ) : (
               <div
                 style={{ background: TODAY.surface, borderRadius: 26 }}

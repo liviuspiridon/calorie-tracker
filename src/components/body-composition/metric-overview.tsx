@@ -18,16 +18,29 @@ const PERIODS: { id: Period; label: string; days: number }[] = [
   { id: "year", label: "Year", days: 365 },
 ];
 
-/** Apple-Health-style vertical breathing room around the period's data — not a hard-scaled 0-based axis. */
-const DOMAIN_PAD_KG = 1;
-
 /**
- * Weight tab's hero + period selector + chart + mini-stats. `entries` is
- * the full, already-fetched weight history (newest first) — everything
- * else (window filtering, domain, reference ticks, min/max/avg/delta) is
- * derived here per the selected period, so the page only fetches once.
+ * Hero + period selector + chart + mini-stats, shared by any body-metric
+ * tab (Weight, Body Fat, ...) that wants the period-aware treatment.
+ * `entries` is the full, already-fetched history (newest first) —
+ * everything else (window filtering, domain, reference ticks,
+ * min/max/avg/delta) is derived here per the selected period, so the page
+ * only fetches once. `unit`/`heroLabel` come straight from the page's
+ * existing per-tab config; `domainPad` is the Apple-Health-style vertical
+ * breathing room around the period's data (not a hard-scaled 0-based axis)
+ * — defaults to 1, which fits both weight (kg) and body fat (%) for this
+ * app's typical fluctuation range.
  */
-export function WeightOverview({ entries }: { entries: BodyMetricEntry[] }) {
+export function MetricOverview({
+  entries,
+  unit,
+  heroLabel,
+  domainPad = 1,
+}: {
+  entries: BodyMetricEntry[];
+  unit: string;
+  heroLabel: string;
+  domainPad?: number;
+}) {
   const [period, setPeriod] = React.useState<Period>("month");
   const latest = entries[0] ?? null;
 
@@ -53,7 +66,7 @@ export function WeightOverview({ entries }: { entries: BodyMetricEntry[] }) {
     const avg = values.length ? values.reduce((sum, v) => sum + v, 0) / values.length : null;
     const delta = values.length ? inWindow[inWindow.length - 1].value - inWindow[0].value : null;
 
-    const periodDomain: [number, number] = [min - DOMAIN_PAD_KG, max + DOMAIN_PAD_KG];
+    const periodDomain: [number, number] = [min - domainPad, max + domainPad];
 
     return {
       windowStart: start,
@@ -62,7 +75,7 @@ export function WeightOverview({ entries }: { entries: BodyMetricEntry[] }) {
       ticks: computeNiceTicks(periodDomain[0], periodDomain[1]),
       stats: { min, max, avg, delta },
     };
-  }, [entries, period, today, latest]);
+  }, [entries, period, today, latest, domainPad]);
 
   return (
     <>
@@ -92,7 +105,7 @@ export function WeightOverview({ entries }: { entries: BodyMetricEntry[] }) {
             className="font-mono text-[11px] font-semibold tracking-[0.15em] uppercase"
             style={{ color: TODAY.ink45 }}
           >
-            Latest weight
+            {heroLabel}
           </span>
         </div>
 
@@ -106,7 +119,7 @@ export function WeightOverview({ entries }: { entries: BodyMetricEntry[] }) {
                 {formatValue(latest.value)}
               </span>
               <span className="text-base font-semibold" style={{ color: TODAY.ink40 }}>
-                kg
+                {unit}
               </span>
             </>
           ) : (
@@ -125,7 +138,7 @@ export function WeightOverview({ entries }: { entries: BodyMetricEntry[] }) {
         {latest && (
           <p className="mt-3 text-[12.5px] font-semibold" style={{ color: TODAY.ink45 }}>
             {stats.avg !== null
-              ? `Avg this ${period}: ${formatValue(stats.avg)} kg`
+              ? `Avg this ${period}: ${formatValue(stats.avg)} ${unit}`
               : `No data logged this ${period}`}
           </p>
         )}
@@ -138,16 +151,16 @@ export function WeightOverview({ entries }: { entries: BodyMetricEntry[] }) {
             domain={domain}
             ticks={ticks}
             mode={period === "year" ? "smooth" : "markers"}
-            unit="kg"
+            unit={unit}
           />
         </div>
 
         {stats.avg !== null && (
           <div className="mt-6 grid grid-cols-4 gap-2">
-            <StatTile label="Min" value={`${formatValue(stats.min)} kg`} />
-            <StatTile label="Max" value={`${formatValue(stats.max)} kg`} />
-            <StatTile label="Avg" value={`${formatValue(stats.avg)} kg`} />
-            <DeltaTile value={stats.delta ?? 0} />
+            <StatTile label="Min" value={`${formatValue(stats.min)} ${unit}`} />
+            <StatTile label="Max" value={`${formatValue(stats.max)} ${unit}`} />
+            <StatTile label="Avg" value={`${formatValue(stats.avg)} ${unit}`} />
+            <DeltaTile value={stats.delta ?? 0} unit={unit} />
           </div>
         )}
       </div>
@@ -171,7 +184,7 @@ function StatTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DeltaTile({ value }: { value: number }) {
+function DeltaTile({ value, unit }: { value: number; unit: string }) {
   const rounded = Math.round(value * 10) / 10;
   const Icon = rounded > 0 ? ArrowUpIcon : rounded < 0 ? ArrowDownIcon : null;
   const sign = rounded > 0 ? "+" : "";
@@ -190,7 +203,7 @@ function DeltaTile({ value }: { value: number }) {
       >
         {Icon && <Icon className="size-3" strokeWidth={3} />}
         {sign}
-        {rounded.toFixed(1)} kg
+        {rounded.toFixed(1)} {unit}
       </span>
     </div>
   );
