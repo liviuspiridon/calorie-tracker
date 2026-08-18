@@ -66,20 +66,21 @@ export function WeightOverview({ entries }: { entries: BodyMetricEntry[] }) {
 
   return (
     <>
-      <div className="mt-6 flex gap-1 rounded-full p-1" style={{ background: TODAY.chip2 }}>
+      <div className="mt-5 flex items-center justify-end gap-4">
         {PERIODS.map((item) => (
           <button
             key={item.id}
             type="button"
             onClick={() => setPeriod(item.id)}
-            className="flex-1 rounded-full py-1.5 text-[12px] font-bold transition-colors"
-            style={
-              period === item.id
-                ? { background: TODAY.ink, color: TODAY.accent }
-                : { background: "transparent", color: TODAY.ink55 }
-            }
+            className="py-1 text-[12px] font-bold transition-colors"
+            style={{ color: period === item.id ? TODAY.ink : TODAY.ink45 }}
           >
-            {item.label}
+            <span
+              className="pb-[3px]"
+              style={{ borderBottom: `2px solid ${period === item.id ? TODAY.clay : "transparent"}` }}
+            >
+              {item.label}
+            </span>
           </button>
         ))}
       </div>
