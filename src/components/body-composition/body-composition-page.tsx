@@ -12,6 +12,7 @@ import { TODAY, TODAY_FONT } from "@/lib/today-theme";
 
 import { MetricEntrySheet } from "./metric-entry-sheet";
 import { TrendChart } from "./trend-chart";
+import { WeightOverview } from "./weight-overview";
 
 const DANGER = "#B3453A";
 
@@ -45,7 +46,7 @@ export function BodyCompositionPage() {
   const [entrySheetOpen, setEntrySheetOpen] = React.useState(false);
   const [editingEntry, setEditingEntry] = React.useState<BodyMetricEntry | null>(null);
 
-  const weight = useWeightHistory();
+  const weight = useWeightHistory(400);
   const bodyFat = useBodyFatHistory();
   const { targets } = useDailyTargets();
 
@@ -160,64 +161,68 @@ export function BodyCompositionPage() {
           <div className="mt-6 h-[360px]" />
         ) : (
           <>
-            <div
-              style={{ background: TODAY.surface, borderRadius: 26 }}
-              className="mt-6 px-[22px] pt-6 pb-[26px]"
-            >
-              <div className="flex items-center gap-[9px]">
-                <span
-                  style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: "50%",
-                    background: TODAY.clay,
-                  }}
-                />
-                <span
-                  className="font-mono text-[11px] font-semibold tracking-[0.15em] uppercase"
-                  style={{ color: TODAY.ink45 }}
-                >
-                  {tabConfig.label}
-                </span>
-              </div>
-
-              <div className="mt-3 flex items-baseline gap-[11px]">
-                {latest ? (
-                  <>
-                    <span
-                      className="text-[78px] leading-[0.82] font-extrabold tracking-[-0.05em] tabular-nums"
-                      style={{ color: TODAY.ink }}
-                    >
-                      {formatValue(latest.value, tabConfig.decimals)}
-                    </span>
-                    {tabConfig.unit && (
-                      <span className="text-base font-semibold" style={{ color: TODAY.ink40 }}>
-                        {tabConfig.unit}
-                      </span>
-                    )}
-                    {tab === "bmi" && <BmiBadge bmi={latest.value} />}
-                  </>
-                ) : (
-                  <span className="text-[15px] font-medium" style={{ color: TODAY.ink45 }}>
-                    Nothing logged yet
+            {tab === "weight" ? (
+              <WeightOverview entries={weight.entries} />
+            ) : (
+              <div
+                style={{ background: TODAY.surface, borderRadius: 26 }}
+                className="mt-6 px-[22px] pt-6 pb-[26px]"
+              >
+                <div className="flex items-center gap-[9px]">
+                  <span
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: "50%",
+                      background: TODAY.clay,
+                    }}
+                  />
+                  <span
+                    className="font-mono text-[11px] font-semibold tracking-[0.15em] uppercase"
+                    style={{ color: TODAY.ink45 }}
+                  >
+                    {tabConfig.label}
                   </span>
+                </div>
+
+                <div className="mt-3 flex items-baseline gap-[11px]">
+                  {latest ? (
+                    <>
+                      <span
+                        className="text-[78px] leading-[0.82] font-extrabold tracking-[-0.05em] tabular-nums"
+                        style={{ color: TODAY.ink }}
+                      >
+                        {formatValue(latest.value, tabConfig.decimals)}
+                      </span>
+                      {tabConfig.unit && (
+                        <span className="text-base font-semibold" style={{ color: TODAY.ink40 }}>
+                          {tabConfig.unit}
+                        </span>
+                      )}
+                      {tab === "bmi" && <BmiBadge bmi={latest.value} />}
+                    </>
+                  ) : (
+                    <span className="text-[15px] font-medium" style={{ color: TODAY.ink45 }}>
+                      Nothing logged yet
+                    </span>
+                  )}
+                </div>
+
+                {latest && (
+                  <p className="mt-1 text-[12px] font-medium" style={{ color: TODAY.ink40 }}>
+                    {tab === "bmi" ? "As of" : "Last logged"} {formatLogDate(latest.date)}
+                  </p>
                 )}
-              </div>
 
-              {latest && (
-                <p className="mt-1 text-[12px] font-medium" style={{ color: TODAY.ink40 }}>
-                  {tab === "bmi" ? "As of" : "Last logged"} {formatLogDate(latest.date)}
-                </p>
-              )}
-
-              <div className="mt-7">
-                <TrendChart
-                  entries={chronological}
-                  unit={tabConfig.unit || "BMI"}
-                  emptyLabel={tab === "bmi" ? "Log a weight entry to see BMI" : "No data yet"}
-                />
+                <div className="mt-7">
+                  <TrendChart
+                    entries={chronological}
+                    unit={tabConfig.unit || "BMI"}
+                    emptyLabel={tab === "bmi" ? "Log a weight entry to see BMI" : "No data yet"}
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="mt-8 h-px" style={{ background: TODAY.hairlineSoft }} />
 

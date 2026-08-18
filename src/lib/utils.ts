@@ -28,6 +28,14 @@ export function formatLocalDate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Parses "YYYY-MM-DD" as local calendar-date components — `new
+ *  Date("YYYY-MM-DD")` parses as UTC midnight, which prints as the wrong
+ *  day in timezones behind UTC. */
+export function parseLocalDate(dateKey: string): Date {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
 /** True if two dates fall on the same calendar day (local time). */
 export function isSameDay(a: Date, b: Date): boolean {
   return (
