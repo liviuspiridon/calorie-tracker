@@ -67,31 +67,10 @@ export function BodyCompositionPage() {
 
   const tabConfig =
     tab === "weight"
-      ? {
-          unit: "kg",
-          decimals: 1,
-          label: "Latest weight",
-          step: 0.1,
-          domainPad: 1,
-          dateCaptionPrefix: "Last logged",
-        }
+      ? { unit: "kg", decimals: 1, label: "Latest weight", step: 0.1, domainPad: 1 }
       : tab === "bodyFat"
-        ? {
-            unit: "%",
-            decimals: 1,
-            label: "Latest body fat",
-            step: 0.1,
-            domainPad: 1,
-            dateCaptionPrefix: "Last logged",
-          }
-        : {
-            unit: "",
-            decimals: 1,
-            label: "Current BMI",
-            step: 0.1,
-            domainPad: 0.5,
-            dateCaptionPrefix: "As of",
-          };
+        ? { unit: "%", decimals: 1, label: "Latest body fat", step: 0.1, domainPad: 1 }
+        : { unit: "", decimals: 1, label: "Current BMI", step: 0.1, domainPad: 0.5 };
 
   function openAddEntry() {
     setEditingEntry(null);
@@ -184,7 +163,6 @@ export function BodyCompositionPage() {
               unit={tabConfig.unit}
               heroLabel={tabConfig.label}
               domainPad={tabConfig.domainPad}
-              dateCaptionPrefix={tabConfig.dateCaptionPrefix}
               renderBadge={tab === "bmi" ? (value) => <BmiBadge bmi={value} /> : undefined}
             />
 

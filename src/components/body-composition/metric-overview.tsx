@@ -37,14 +37,12 @@ export function MetricOverview({
   unit,
   heroLabel,
   domainPad = 1,
-  dateCaptionPrefix = "Last logged",
   renderBadge,
 }: {
   entries: BodyMetricEntry[];
   unit: string;
   heroLabel: string;
   domainPad?: number;
-  dateCaptionPrefix?: string;
   renderBadge?: (value: number) => React.ReactNode;
 }) {
   const [period, setPeriod] = React.useState<Period>("month");
@@ -138,21 +136,7 @@ export function MetricOverview({
           )}
         </div>
 
-        {latest && (
-          <p className="mt-1 text-[12px] font-medium" style={{ color: TODAY.ink40 }}>
-            {dateCaptionPrefix} {formatLogDate(latest.date)}
-          </p>
-        )}
-
-        {latest && (
-          <p className="mt-3 text-[12.5px] font-semibold" style={{ color: TODAY.ink45 }}>
-            {stats.avg !== null
-              ? `Avg this ${period}: ${withUnit(formatValue(stats.avg), unit)}`
-              : `No data logged this ${period}`}
-          </p>
-        )}
-
-        <div className="mt-6">
+        <div className="mt-7">
           <PeriodTrendChart
             entries={periodEntries}
             windowStart={windowStart}
@@ -226,8 +210,4 @@ function formatValue(value: number): string {
 /** BMI has no unit — omit the trailing space rather than print e.g. "27 ". */
 function withUnit(value: string, unit: string): string {
   return unit ? `${value} ${unit}` : value;
-}
-
-function formatLogDate(dateKey: string): string {
-  return parseLocalDate(dateKey).toLocaleDateString(undefined, { month: "long", day: "numeric" });
 }
