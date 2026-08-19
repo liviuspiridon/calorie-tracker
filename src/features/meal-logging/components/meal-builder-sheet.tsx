@@ -310,27 +310,6 @@ export function MealBuilderSheet({
               className="shrink-0 px-[22px] pt-3 pb-[26px]"
               style={{ borderTop: `1px solid ${TODAY.hairline}` }}
             >
-              {items.length > 0 && (
-                <div className="mb-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => textareaRef.current?.focus()}
-                    className="flex-1 rounded-full py-2.5 text-[12.5px] font-semibold"
-                    style={{ background: TODAY.chip2, color: TODAY.ink }}
-                  >
-                    + Adaugă alt ingredient
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleFinalize}
-                    className="flex-1 rounded-full py-2.5 text-[12.5px] font-bold"
-                    style={{ background: TODAY.ink, color: TODAY.accent }}
-                  >
-                    Finalizează masa
-                  </button>
-                </div>
-              )}
-
               {photo && (
                 <div className="mb-3 flex items-center gap-2.5 rounded-2xl p-2" style={{ background: TODAY.chip2 }}>
                   {/* eslint-disable-next-line @next/next/no-img-element -- transient client-only data: URL preview, not a static asset */}
@@ -384,7 +363,9 @@ export function MealBuilderSheet({
                   }
                 }}
                 placeholder={
-                  photo ? "Optional: quantity, e.g. 150g" : "e.g. 300g tomatoes, or 2 eggs"
+                  photo
+                    ? "Optional: quantity, e.g. 150g"
+                    : "Adaugă alt ingredient… (ex. 300g roșii, 2 ouă)"
                 }
                 rows={2}
                 disabled={busy}
@@ -458,6 +439,16 @@ export function MealBuilderSheet({
                     : "Voice input isn't available right now."}
                 </p>
               )}
+
+              <button
+                type="button"
+                onClick={handleFinalize}
+                disabled={items.length === 0}
+                className="mt-3 h-12 w-full rounded-full text-sm font-bold disabled:opacity-40"
+                style={{ background: TODAY.ink, color: TODAY.accent }}
+              >
+                Finalizează masa
+              </button>
             </div>
           </>
         ) : (
