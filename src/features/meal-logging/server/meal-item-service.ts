@@ -102,38 +102,6 @@ Guidelines:
 - message is a one-sentence overall summary, e.g. "Found 1 possible mismatch." or "Everything on the plate matches what's logged." — write it even when suggestions is empty.
 - If nothing looks off, return an empty suggestions array — do not invent a discrepancy to have something to say.`;
 
-// --- Superseded single-shot prompts, kept only for the "old path" methods
-// below (analyzeItem/analyzeItemPhoto) pending their removal in a follow-up
-// commit — see the TEXT_TURN_/PHOTO_*_TURN_ prompts above for the live
-// conversational replacements actually wired into the UI.
-
-const TEXT_ITEM_SYSTEM_PROMPT = `You are a nutrition analyst for a personal calorie-tracking app. The user is adding ONE ingredient to a meal they're building, described in their own words (e.g. "300g tomatoes", "2 eggs", "a slice of sourdough").
-
-Guidelines:
-- description: a concise, cleaned-up name for this one item.
-${PER_100G_GUIDELINE}
-${ZERO_CALORIE_BASE_GUIDELINE}
-- Use typical reference weights when the quantity is given by count ("2 eggs") rather than weight.
-- confidence: "high" when the food and quantity are specific and typical, "medium" when the quantity had to be assumed, "low" when the food itself is ambiguous.`;
-
-const PHOTO_FOOD_ITEM_SYSTEM_PROMPT = `You are a nutrition analyst for a personal calorie-tracking app, identifying ONE food item from a photo (not a nutrition label — the food or dish itself).
-
-Guidelines:
-- description: a concise name for what's shown, e.g. "Grilled chicken breast".
-${PER_100G_GUIDELINE}
-${ZERO_CALORIE_BASE_GUIDELINE}
-- Estimate the portion size from visual cues (plate/utensil scale, container volume, height of the pile) unless the user gave you a quantity to use instead.
-- confidence: "high" when the food and portion are clearly readable, "medium" when the portion had to be assumed, "low" when the photo is unclear or may not be food at all.`;
-
-const PHOTO_LABEL_ITEM_SYSTEM_PROMPT = `You are reading a Nutrition Facts / nutrition label photo for a personal calorie-tracking app. The printed values are exact facts, not estimates — read them precisely.
-
-Guidelines:
-- description: the product name if visible on the label/packaging, otherwise a generic description of the product.
-${PER_100G_GUIDELINE}
-- Read caloriesPer100g etc. directly from the label's "per 100g" row if present. If the label only gives a "per serving" row, divide those values by the serving size in grams to get the per-100g rate.
-- grams: the quantity the user says they're eating (parse it to a number of grams — if they gave a non-gram quantity like "a serving" or "2 slices", convert using the label's own serving-size definition). If the user gave no quantity, default to one serving as defined on the label.
-- confidence: "high" when the label's numbers are clearly legible, "low" when the label is blurry or partially unreadable — still return your best-effort reading rather than zeros unless there is truly no nutrition information visible.`;
-
 const MEAL_ITEM_SCHEMA_FIELDS = {
   description: { type: "string", description: "Concise name for this one item" },
   grams: { type: "integer", description: "Estimated portion weight in grams" },
@@ -167,14 +135,6 @@ const MEAL_ITEM_SCHEMA_REQUIRED = [
   "confidence",
   "source",
 ];
-
-/** Enforced server-side via structured outputs. Mirrors MealItemDraft in ../types. Used only by the superseded analyzeItem/analyzeItemPhoto below. */
-const MEAL_ITEM_SCHEMA = {
-  type: "object",
-  properties: MEAL_ITEM_SCHEMA_FIELDS,
-  required: MEAL_ITEM_SCHEMA_REQUIRED,
-  additionalProperties: false,
-} as const;
 
 const MEAL_ITEMS_SCHEMA = {
   type: "object",
@@ -342,57 +302,6 @@ export class MealItemService {
 
     return parseReconciliation(response.text, items.length);
   }
-
-  // --- Superseded by resolveTurn() above, kept only pending removal in a
-  // follow-up commit so this one is a pure "new flow, still functional and
-  // side-by-side with the old" snapshot rather than an add+delete mixed
-  // together.
-
-  /** @deprecated superseded by resolveTurn — see class doc comment above. */
-  async analyzeItem(text: string): Promise<MealItemDraft> {
-    const trimmed = text.trim();
-    if (!trimmed) {
-      throw new Error("MealItemService.analyzeItem requires non-empty text.");
-    }
-
-    const response = await this.aiProvider.complete({
-      system: TEXT_ITEM_SYSTEM_PROMPT,
-      prompt: trimmed,
-      jsonSchema: { ...MEAL_ITEM_SCHEMA },
-    });
-
-    return parseItemDraft(response.text, trimmed);
-  }
-
-  /** @deprecated superseded by resolveTurn — see class doc comment above. */
-  async analyzeItemPhoto(
-    image: AIImageInput,
-    mode: "food" | "label",
-    quantityHint?: string,
-  ): Promise<MealItemDraft> {
-    if (!image.data) {
-      throw new Error("MealItemService.analyzeItemPhoto requires image data.");
-    }
-
-    const hint = quantityHint?.trim();
-    const prompt =
-      mode === "label"
-        ? hint
-          ? `Read this nutrition label. The user is eating: ${hint}. Report the per-100g macros and the grams for that quantity.`
-          : "Read this nutrition label and report its per-100g macros. No quantity was given — default to one serving as defined on the label."
-        : hint
-          ? `Identify this food and report its per-100g macros. The user says the portion is: ${hint}.`
-          : "Identify this food, estimate the portion size from the photo, and report its per-100g macros.";
-
-    const response = await this.aiProvider.complete({
-      system: mode === "label" ? PHOTO_LABEL_ITEM_SYSTEM_PROMPT : PHOTO_FOOD_ITEM_SYSTEM_PROMPT,
-      prompt,
-      image,
-      jsonSchema: { ...MEAL_ITEM_SCHEMA },
-    });
-
-    return parseItemDraft(response.text, hint || "Item from photo");
-  }
 }
 
 /**
@@ -451,7 +360,7 @@ function parseTurnResult(rawText: string, fallbackDescription: string): MealTurn
   }
 }
 
-/** Same defensiveness as parseItemDraft, for the array-returning edit call. */
+/** Same defensiveness as parseTurnResult, for the array-returning edit call. */
 function parseItemsArray(rawText: string, fallback: MealItemDraft[]): MealItemDraft[] {
   try {
     const parsed = JSON.parse(extractJson(rawText));
@@ -485,22 +394,6 @@ function suggestionFromParsed(parsed: unknown): ReconciliationSuggestion | null 
   if (!Number.isInteger(targetIndex) || !Number.isFinite(suggestedGrams) || suggestedGrams <= 0) return null;
   if (typeof value.issue !== "string" || !value.issue.trim()) return null;
   return { targetIndex, issue: value.issue, suggestedGrams: Math.round(suggestedGrams) };
-}
-
-/**
- * LLM output is text, not a guaranteed type — even asked nicely for JSON, a
- * real model can wrap it in prose, markdown fencing, or omit a field. This
- * never throws; malformed output degrades to a low-confidence placeholder
- * instead of failing the request. Used only by the superseded
- * analyzeItem/analyzeItemPhoto pending removal in a follow-up commit.
- */
-function parseItemDraft(rawText: string, fallbackDescription: string): MealItemDraft {
-  try {
-    const parsed = JSON.parse(extractJson(rawText));
-    return draftFromParsed(parsed, fallbackDescription);
-  } catch {
-    return emptyDraft(fallbackDescription);
-  }
 }
 
 function draftFromParsed(parsed: unknown, fallbackDescription: string): MealItemDraft {

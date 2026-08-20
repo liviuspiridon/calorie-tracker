@@ -67,23 +67,3 @@ export async function reconcileMealWithPhoto(
   validateImage(image);
   return mealItemService.reconcileWithPhoto(items, image);
 }
-
-// --- Superseded by resolveMealTurn() above, kept only pending removal in a
-// follow-up commit so this one is a pure "new flow, still functional and
-// side-by-side with the old" snapshot rather than an add+delete mixed
-// together. Nothing in the UI calls these anymore.
-
-/** @deprecated superseded by resolveMealTurn. */
-export async function analyzeMealItem(text: string): Promise<MealItemDraft> {
-  return mealItemService.analyzeItem(text);
-}
-
-/** @deprecated superseded by resolveMealTurn. */
-export async function analyzeMealItemPhoto(
-  image: { data: string; mimeType: string },
-  mode: "food" | "label",
-  quantityHint?: string,
-): Promise<MealItemDraft> {
-  validateImage(image);
-  return mealItemService.analyzeItemPhoto(image, mode, quantityHint);
-}
