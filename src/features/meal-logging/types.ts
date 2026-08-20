@@ -55,10 +55,67 @@ export interface MealItem {
   fatPer100g: number;
   fiberPer100g: number;
   confidence?: "low" | "medium" | "high";
+  /**
+   * How the macros were obtained — orthogonal to `confidence` (a label
+   * reading can still be low-confidence if the photo is blurry). Absent
+   * means "estimated", same as every item created before this field
+   * existed.
+   */
+  source?: "label" | "estimated";
 }
 
 /** What the AI returns for one item — everything but the client-generated id. */
 export type MealItemDraft = Omit<MealItem, "id">;
+
+/** One turn of the building-step conversation, building-step-only — never persisted. */
+export interface ConversationMessage {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  /** `data:` URL thumbnail — present when a user turn attached a photo. */
+  photoPreviewUrl?: string;
+}
+
+/**
+ * What one turn of `resolveTurn` (see server/meal-item-service.ts) returns.
+ * `"clarify"` means the model couldn't safely default a missing detail
+ * (quantity, food identity) and is asking instead of guessing — `item` is
+ * only present when `status === "resolved"`.
+ */
+export interface MealTurnResult {
+  status: "resolved" | "clarify";
+  /** Conversational reply shown to the user: a confirmation + prompt to continue/finish, or a clarifying question. */
+  message: string;
+  item?: MealItemDraft;
+}
+
+/**
+ * Continuation context for a turn that answers an earlier "clarify"
+ * response — every question/answer round for this one ingredient so far,
+ * so the model sees the full thread rather than just the latest fragment.
+ */
+export interface TurnContext {
+  originalText?: string;
+  exchange: { question: string; answer: string }[];
+}
+
+/**
+ * One discrepancy `reconcileWithPhoto` found between the logged items and a
+ * plate photo. `targetIndex` is the position in the items array as sent to
+ * the model — indices, not descriptions, because two logged items can
+ * legitimately share a description (e.g. eggs added in two separate
+ * turns), which would make description-matching ambiguous.
+ */
+export interface ReconciliationSuggestion {
+  targetIndex: number;
+  issue: string;
+  suggestedGrams: number;
+}
+
+export interface ReconciliationResult {
+  message: string;
+  suggestions: ReconciliationSuggestion[];
+}
 
 type MacroTotals = Pick<MealAnalysis, "calories" | "protein" | "carbs" | "fat" | "fiber">;
 

@@ -15,20 +15,27 @@ import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { fileToCompressedBase64 } from "@/lib/image";
 import { TODAY, TODAY_FONT } from "@/lib/today-theme";
 
-import { analyzeMealItem, analyzeMealItemPhoto, editMealItems } from "../actions";
+import { editMealItems, reconcileMealWithPhoto, resolveMealTurn } from "../actions";
 import {
-  computeItemMacros,
   lowestConfidence,
   sumItemMacros,
   type MealItem,
   type MealItemDraft,
   type MealLogEntry,
+  type ReconciliationResult,
+  type ReconciliationSuggestion,
 } from "../types";
+import { ConversationFeed, type FeedEntry } from "./conversation-feed";
+import { ItemCard } from "./item-card";
+import { ReconciliationPanel } from "./reconciliation-panel";
 
 type BuilderStep = "building" | "review";
 
 /** Recording-state accent for the Voice pill — the app has no red token. */
 const VOICE_RED = "#E5484D";
+
+/** At most this many clarifying questions per ingredient before forcing a low-confidence resolution — see handleSubmitItem. */
+const MAX_CLARIFY_ROUNDS = 2;
 
 interface PendingPhoto {
   base64: string;
@@ -38,8 +45,36 @@ interface PendingPhoto {
   mode: "food" | "label";
 }
 
+/**
+ * State while an ingredient turn is mid-resolution — the model asked a
+ * clarifying question and is waiting for the user's reply. `exchange` holds
+ * every completed question/answer round so far for this one ingredient;
+ * `lastQuestion` is the one the next submission answers.
+ */
+interface PendingClarification {
+  originalText?: string;
+  photo: PendingPhoto | null;
+  exchange: { question: string; answer: string }[];
+  lastQuestion: string;
+}
+
 function withId(draft: MealItemDraft): MealItem {
   return { ...draft, id: crypto.randomUUID() };
+}
+
+function toDraft(item: MealItem): MealItemDraft {
+  return {
+    description: item.description,
+    grams: item.grams,
+    unit: item.unit,
+    caloriesPer100g: item.caloriesPer100g,
+    proteinPer100g: item.proteinPer100g,
+    carbsPer100g: item.carbsPer100g,
+    fatPer100g: item.fatPer100g,
+    fiberPer100g: item.fiberPer100g,
+    confidence: item.confidence,
+    source: item.source,
+  };
 }
 
 /** grams=100 makes the legacy aggregate values directly the per-100g rates — no scaling needed to seed a single synthetic item from an old one-shot meal. */
@@ -58,13 +93,15 @@ function itemFromAnalysis(analysis: MealLogEntry["analysis"]): MealItem {
 }
 
 /**
- * Iterative, item-by-item meal builder: add ingredients one at a time (text,
- * voice, or photo — either a food photo or a nutrition-label photo plus a
- * quantity), then finalize into a review screen for weight/edit adjustments
- * before saving. Everything here — the item list, in-progress photo, text —
- * is ephemeral component state; nothing is persisted until "Salvează masa"
- * builds the final MealLogEntry and hands it to `onSave`, exactly like the
- * single-shot flow this replaces.
+ * Conversational, item-by-item meal builder: add ingredients one at a time
+ * (text, voice, or photo — either a food photo or a nutrition-label photo
+ * plus a quantity), each turn answered by the model with a confirmation +
+ * prompt to continue/finish, or a clarifying question when the input is too
+ * ambiguous to default. Then finalize into a review screen for weight/edit
+ * adjustments — optionally checked against a photo of the plate — before
+ * saving. Everything here — the conversation, in-progress photo, text — is
+ * ephemeral component state; nothing is persisted until "Salvează masa"
+ * builds the final MealLogEntry and hands it to `onSave`.
  *
  * `editingMeal`, when set, opens straight into the review step: seeded from
  * `editingMeal.items` when present, or a single synthetic item built from
@@ -89,16 +126,25 @@ export function MealBuilderSheet({
   const [items, setItems] = React.useState<MealItem[]>([]);
   const [mealName, setMealName] = React.useState("");
 
+  const [feed, setFeed] = React.useState<FeedEntry[]>([]);
+  const [pendingClarification, setPendingClarification] = React.useState<PendingClarification | null>(null);
+
   const [text, setText] = React.useState("");
   const [photo, setPhoto] = React.useState<PendingPhoto | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const photoInputRef = React.useRef<HTMLInputElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const feedEndRef = React.useRef<HTMLDivElement | null>(null);
 
   const [editText, setEditText] = React.useState("");
   const [editBusy, setEditBusy] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
+
+  const [reconciliation, setReconciliation] = React.useState<ReconciliationResult | null>(null);
+  const [reconcileBusy, setReconcileBusy] = React.useState(false);
+  const [reconcileError, setReconcileError] = React.useState<string | null>(null);
+  const reconcilePhotoInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // The textarea value when dictation started — new speech is appended after
   // it, so a session's transcript re-renders cleanly without duplicating.
@@ -136,12 +182,20 @@ export function MealBuilderSheet({
     setError(null);
     setEditText("");
     setEditError(null);
+    setFeed([]);
+    setPendingClarification(null);
+    setReconciliation(null);
+    setReconcileError(null);
   }, [open, editingMeal]);
 
   // Dictation only makes sense on the building step of an open sheet.
   React.useEffect(() => {
     if (!open || step !== "building") stopVoice();
   }, [open, step, stopVoice]);
+
+  React.useEffect(() => {
+    feedEndRef.current?.scrollIntoView({ block: "end" });
+  }, [feed]);
 
   function resetSession() {
     stopVoice();
@@ -153,6 +207,10 @@ export function MealBuilderSheet({
     setError(null);
     setEditText("");
     setEditError(null);
+    setFeed([]);
+    setPendingClarification(null);
+    setReconciliation(null);
+    setReconcileError(null);
   }
 
   function handleOpenChange(next: boolean) {
@@ -194,17 +252,61 @@ export function MealBuilderSheet({
     const trimmed = text.trim();
     if (!trimmed && !photo) return;
 
+    const clarifying = pendingClarification;
+    const activePhoto = photo ?? (clarifying ? clarifying.photo : null);
+
+    setFeed((prev) => [
+      ...prev,
+      {
+        kind: "message",
+        message: { id: crypto.randomUUID(), role: "user", text: trimmed, photoPreviewUrl: photo?.previewUrl },
+      },
+    ]);
     setBusy(true);
     setError(null);
+
     try {
-      const draft = photo
-        ? await analyzeMealItemPhoto(
-            { data: photo.base64, mimeType: photo.mimeType },
-            photo.mode,
-            trimmed || undefined,
-          )
-        : await analyzeMealItem(trimmed);
-      setItems((prev) => [...prev, withId(draft)]);
+      const context = clarifying
+        ? {
+            originalText: clarifying.originalText,
+            exchange: [...clarifying.exchange, { question: clarifying.lastQuestion, answer: trimmed }],
+          }
+        : undefined;
+      // Questions already asked for this ingredient (the pending one counts,
+      // even though it isn't in `exchange` until this reply completes it).
+      // At the cap, this reply must resolve rather than risk one more question.
+      const questionsAsked = clarifying ? clarifying.exchange.length + 1 : 0;
+      const forceResolve = questionsAsked >= MAX_CLARIFY_ROUNDS;
+
+      const result = await resolveMealTurn({
+        text: trimmed || undefined,
+        image: activePhoto ? { data: activePhoto.base64, mimeType: activePhoto.mimeType } : undefined,
+        mode: activePhoto?.mode,
+        context,
+        forceResolve,
+      });
+
+      setFeed((prev) => [
+        ...prev,
+        { kind: "message", message: { id: crypto.randomUUID(), role: "assistant", text: result.message } },
+      ]);
+
+      if (result.status === "clarify") {
+        setPendingClarification({
+          originalText: clarifying ? clarifying.originalText : trimmed || undefined,
+          photo: activePhoto,
+          exchange: context?.exchange ?? [],
+          lastQuestion: result.message,
+        });
+      } else {
+        setPendingClarification(null);
+        if (result.item) {
+          const newItem = withId(result.item);
+          setItems((prev) => [...prev, newItem]);
+          setFeed((prev) => [...prev, { kind: "item", itemId: newItem.id }]);
+        }
+      }
+
       setText("");
       setPhoto(null);
     } catch {
@@ -216,6 +318,10 @@ export function MealBuilderSheet({
 
   function handleRemoveItem(id: string) {
     setItems((prev) => prev.filter((item) => item.id !== id));
+    setFeed((prev) => prev.filter((entry) => !(entry.kind === "item" && entry.itemId === id)));
+    // Reconciliation suggestions reference items by array index — no longer
+    // reliable once the array's shape changes.
+    setReconciliation(null);
   }
 
   function handleGramsChange(id: string, grams: number) {
@@ -237,7 +343,7 @@ export function MealBuilderSheet({
     setEditBusy(true);
     setEditError(null);
     try {
-      const updated = await editMealItems(items, trimmed);
+      const updated = await editMealItems(items.map(toDraft), trimmed);
       setItems(updated.map(withId));
       setEditText("");
     } catch {
@@ -245,6 +351,41 @@ export function MealBuilderSheet({
     } finally {
       setEditBusy(false);
     }
+  }
+
+  async function handleReconcilePhotoSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || items.length === 0) return;
+
+    setReconcileBusy(true);
+    setReconcileError(null);
+    try {
+      const image = await fileToCompressedBase64(file);
+      const result = await reconcileMealWithPhoto(items.map(toDraft), {
+        data: image.data,
+        mimeType: image.mimeType,
+      });
+      setReconciliation(result);
+    } catch {
+      setReconcileError("Couldn't check that photo. Try again.");
+    } finally {
+      setReconcileBusy(false);
+    }
+  }
+
+  function handleAcceptSuggestion(suggestion: ReconciliationSuggestion) {
+    const target = items[suggestion.targetIndex];
+    if (target) handleGramsChange(target.id, suggestion.suggestedGrams);
+    setReconciliation((prev) =>
+      prev ? { ...prev, suggestions: prev.suggestions.filter((s) => s !== suggestion) } : prev,
+    );
+  }
+
+  function handleDismissSuggestion(suggestion: ReconciliationSuggestion) {
+    setReconciliation((prev) =>
+      prev ? { ...prev, suggestions: prev.suggestions.filter((s) => s !== suggestion) } : prev,
+    );
   }
 
   function handleSave() {
@@ -295,15 +436,14 @@ export function MealBuilderSheet({
               </div>
             )}
 
-            <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto px-[22px]">
-              {items.map((item) => (
-                <ItemCard key={item.id} item={item} onDelete={() => handleRemoveItem(item.id)} />
-              ))}
-              {items.length === 0 && (
-                <p className="py-8 text-center text-[13px] font-medium" style={{ color: TODAY.ink45 }}>
-                  Add your first ingredient below — by text, voice, or photo.
-                </p>
-              )}
+            <div className="mt-3 min-h-0 flex-1 overflow-y-auto px-[22px]">
+              <ConversationFeed
+                entries={feed}
+                items={items}
+                onDeleteItem={handleRemoveItem}
+                emptyLabel="Add your first ingredient below — by text, voice, or photo."
+              />
+              <div ref={feedEndRef} />
             </div>
 
             <div
@@ -365,7 +505,9 @@ export function MealBuilderSheet({
                 placeholder={
                   photo
                     ? "Optional: quantity, e.g. 150g"
-                    : "Adaugă alt ingredient… (ex. 300g roșii, 2 ouă)"
+                    : pendingClarification
+                      ? "Your answer…"
+                      : "Adaugă alt ingredient… (ex. 300g roșii, 2 ouă)"
                 }
                 rows={2}
                 disabled={busy}
@@ -506,6 +648,64 @@ export function MealBuilderSheet({
             </div>
 
             <div className="mt-5 space-y-2">
+              <div className="flex items-center justify-between">
+                <label
+                  className="font-mono text-[10.5px] font-semibold tracking-[0.14em] uppercase"
+                  style={{ color: TODAY.ink45 }}
+                >
+                  Check against your plate
+                </label>
+                <button
+                  type="button"
+                  onClick={() => reconcilePhotoInputRef.current?.click()}
+                  disabled={reconcileBusy}
+                  className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold disabled:opacity-40"
+                  style={{ background: TODAY.chip2, color: TODAY.ink }}
+                >
+                  {reconcileBusy ? (
+                    <Loader2Icon className="size-3.5 animate-spin" />
+                  ) : (
+                    <CameraIcon className="size-3.5" />
+                  )}
+                  Plate photo
+                </button>
+              </div>
+              <input
+                ref={reconcilePhotoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleReconcilePhotoSelected}
+                className="hidden"
+              />
+              {reconcileError && (
+                <p className="text-sm" style={{ color: "#B3453A" }}>
+                  {reconcileError}
+                </p>
+              )}
+              {reconciliation && (
+                <>
+                  {reconciliation.suggestions.length === 0 ? (
+                    <p className="text-[12.5px] font-medium" style={{ color: TODAY.ink45 }}>
+                      {reconciliation.message}
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-[12.5px] font-medium" style={{ color: TODAY.ink45 }}>
+                        {reconciliation.message}
+                      </p>
+                      <ReconciliationPanel
+                        suggestions={reconciliation.suggestions}
+                        items={items}
+                        onAccept={handleAcceptSuggestion}
+                        onDismiss={handleDismissSuggestion}
+                      />
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="mt-5 space-y-2">
               <label
                 htmlFor="edit-instruction"
                 className="font-mono text-[10.5px] font-semibold tracking-[0.14em] uppercase"
@@ -629,79 +829,6 @@ function MacroTile({ label, value }: { label: string; value: number }) {
       >
         {label}
       </div>
-    </div>
-  );
-}
-
-function ItemCard({
-  item,
-  onDelete,
-  onGramsChange,
-}: {
-  item: MealItem;
-  onDelete: () => void;
-  /** Rendering the grams number+slider controls is opt-in — the building-step list keeps items compact and only edits weight in review. */
-  onGramsChange?: (grams: number) => void;
-}) {
-  const macros = computeItemMacros(item);
-
-  return (
-    <div className="flex items-start gap-3 rounded-2xl px-4 py-3" style={{ background: TODAY.chip2 }}>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[14px] font-semibold" style={{ color: TODAY.ink }}>
-          {item.description}
-        </p>
-        {onGramsChange ? (
-          <div className="mt-2.5 flex items-center gap-3">
-            <input
-              type="range"
-              min={1}
-              max={1000}
-              step={5}
-              value={Math.min(item.grams, 1000)}
-              onChange={(event) => onGramsChange(Number(event.target.value))}
-              className="h-1 flex-1"
-              style={{ accentColor: TODAY.ink }}
-            />
-            <div className="flex shrink-0 items-center gap-1">
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                value={item.grams}
-                onChange={(event) => onGramsChange(Math.max(1, Number(event.target.value) || 1))}
-                className="w-14 rounded-lg px-2 py-1 text-right text-[13px] font-semibold outline-none"
-                style={{ background: TODAY.bg, color: TODAY.ink }}
-              />
-              <span className="text-[12px] font-medium" style={{ color: TODAY.ink40 }}>
-                {item.unit || "g"}
-              </span>
-            </div>
-          </div>
-        ) : (
-          <p className="mt-0.5 text-[12px] font-medium" style={{ color: TODAY.ink45 }}>
-            {item.grams}
-            {item.unit || "g"}
-          </p>
-        )}
-      </div>
-      <div className="shrink-0 text-right">
-        <p className="text-[14px] font-bold tabular-nums" style={{ color: TODAY.ink }}>
-          {macros.calories} kcal
-        </p>
-        <p className="mt-0.5 text-[10.5px] font-medium tabular-nums" style={{ color: TODAY.ink40 }}>
-          {macros.protein}P · {macros.carbs}C · {macros.fat}F · {macros.fiber}Fi
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={onDelete}
-        aria-label={`Remove ${item.description}`}
-        className="flex size-7 shrink-0 items-center justify-center rounded-full"
-        style={{ background: TODAY.bg, color: TODAY.ink45 }}
-      >
-        <XIcon className="size-3.5" />
-      </button>
     </div>
   );
 }

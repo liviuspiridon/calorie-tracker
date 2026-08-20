@@ -1,7 +1,13 @@
 import { extractJson } from "@/lib/ai/extract-json";
 import type { AIImageInput, AIProvider } from "@/lib/ai/provider";
 
-import type { MealItemDraft } from "../types";
+import type {
+  MealItemDraft,
+  MealTurnResult,
+  ReconciliationResult,
+  ReconciliationSuggestion,
+  TurnContext,
+} from "../types";
 
 const PER_100G_GUIDELINE = `- grams: your best estimate of the total weight in grams of the portion described/shown.
 - unit: "ml" when the item is a liquid you'd naturally measure by volume (milk, water, coffee, juice, oil, sauces, etc.), "g" for solids. This only changes how the amount is displayed — \`grams\` is always the same number either way (1ml treated as 1g).
@@ -20,6 +26,86 @@ const PER_100G_GUIDELINE = `- grams: your best estimate of the total weight in g
  * scale linearly with calories.
  */
 const ZERO_CALORIE_BASE_GUIDELINE = `- Zero- or negligible-calorie liquids (water, black coffee, espresso, unsweetened tea, diet soda, etc.) never get an item of their own, and must never be blended into another item's weight or macros. If the description mixes one of these with a calorie-bearing ingredient — e.g. "coffee with 100ml milk", "tea with a spoon of honey" — return ONLY the calorie-bearing ingredient as the item: its own real per-100g nutrition density and its own actual quantity as grams. Example: "coffee with 100ml milk" -> description "Lapte 1.5%" (or similar, named after the ingredient itself, not the drink), grams: 100, using milk's real per-100g values (not diluted across the coffee's volume). Never combine the two into one blended item, and never let the zero-calorie liquid's volume inflate the item's grams.`;
+
+/**
+ * Shared across all three turn prompts (text/photo-food/photo-label): when
+ * to ask instead of guess, and what the conversational `message` should
+ * say either way. A turn is one exchange in the building-step conversation
+ * — see MealBuilderSheet's `messages`/`pendingClarification` state.
+ */
+const TURN_GUIDELINE = `- If this input is genuinely too ambiguous to give a reasonable estimate (the food itself is unclear, or there's no quantity and no sensible typical default applies), set status to "clarify", ask ONE short specific question in \`message\`, and omit \`item\` entirely. Reserve this for real ambiguity — when a sensible default exists (e.g. "2 eggs" -> typical egg size, "a slice of bread" -> typical slice), resolve it with your best estimate and reflect the uncertainty in \`confidence\` instead of asking. Most turns should resolve without asking.
+- Once resolved (whether on the first try or after the user answered a clarifying question), set status to "resolved", fill in \`item\`, and write \`message\` as a brief confirmation of what was added (its name and calories) followed by asking whether to add another ingredient or finish the meal.
+- If a previous exchange is given below, it's this same ingredient still being resolved — use all of it as context, don't treat the latest reply as a brand new unrelated ingredient.`;
+
+/**
+ * Appended when the caller has hit MAX_CLARIFY_ROUNDS (see
+ * MealBuilderSheet) — the conversation has already asked enough questions
+ * about this one ingredient without fully resolving it, so no more are
+ * allowed. `parseTurnResult` also hard-enforces this: if the model ignores
+ * the instruction and returns "clarify" anyway, the caller coerces it to a
+ * low-confidence resolved item rather than letting the round cap be a
+ * suggestion instead of a guarantee.
+ */
+const FORCE_RESOLVE_GUIDELINE = `- IMPORTANT: This ingredient has already been through multiple rounds of clarification without fully resolving. Do NOT ask another question. Set status to "resolved" now, using your best-effort guess for whatever is still uncertain, and set confidence to "low" to reflect that. In \`message\`, briefly say this is a rough estimate the user can edit.`;
+
+const TEXT_TURN_SYSTEM_PROMPT = `You are a nutrition analyst for a personal calorie-tracking app, having a short back-and-forth with the user as they build a meal one ingredient at a time. They just described ONE ingredient in their own words (e.g. "300g tomatoes", "2 eggs", "a slice of sourdough").
+
+Guidelines:
+- description: a concise, cleaned-up name for this one item.
+${PER_100G_GUIDELINE}
+${ZERO_CALORIE_BASE_GUIDELINE}
+- Use typical reference weights when the quantity is given by count ("2 eggs") rather than weight.
+- confidence: "high" when the food and quantity are specific and typical, "medium" when the quantity had to be assumed, "low" when the food itself is ambiguous.
+- Always set source to "estimated".
+${TURN_GUIDELINE}`;
+
+const PHOTO_FOOD_TURN_SYSTEM_PROMPT = `You are a nutrition analyst for a personal calorie-tracking app, having a short back-and-forth with the user as they build a meal one ingredient at a time. They just attached a photo of ONE food item (not a nutrition label — the food or dish itself).
+
+Guidelines:
+- description: a concise name for what's shown, e.g. "Grilled chicken breast".
+${PER_100G_GUIDELINE}
+${ZERO_CALORIE_BASE_GUIDELINE}
+- Estimate the portion size from visual cues (plate/utensil scale, container volume, height of the pile) unless the user gave you a quantity to use instead.
+- confidence: "high" when the food and portion are clearly readable, "medium" when the portion had to be assumed, "low" when the photo is unclear or may not be food at all.
+- Always set source to "estimated".
+${TURN_GUIDELINE}`;
+
+const PHOTO_LABEL_TURN_SYSTEM_PROMPT = `You are reading a Nutrition Facts / nutrition label photo for a personal calorie-tracking app, as the user builds a meal one ingredient at a time. The printed values are exact facts, not estimates — read them precisely.
+
+Guidelines:
+- description: the product name if visible on the label/packaging, otherwise a generic description of the product.
+${PER_100G_GUIDELINE}
+- Read caloriesPer100g etc. directly from the label's "per 100g" row if present. If the label only gives a "per serving" row, divide those values by the serving size in grams to get the per-100g rate.
+- grams: the quantity the user says they're eating (parse it to a number of grams — if they gave a non-gram quantity like "a serving" or "2 slices", convert using the label's own serving-size definition). If the user gave no quantity, default to one serving as defined on the label.
+- confidence: "high" when the label's numbers are clearly legible, "low" when the label is blurry or partially unreadable — still return your best-effort reading rather than zeros unless there is truly no nutrition information visible.
+- Always set source to "label".
+${TURN_GUIDELINE}`;
+
+const EDIT_ITEMS_SYSTEM_PROMPT = `You maintain the list of ingredients for a meal a user is building in a calorie-tracking app. You'll be given the current items as JSON and a natural-language instruction (e.g. "change the white bread to sourdough", "make the chicken 250g", "remove the fries"). Return the FULL updated items array reflecting that instruction.
+
+Guidelines:
+- Apply the instruction to whichever item(s) it clearly refers to; leave every other item exactly as it was.
+- If the instruction describes swapping one food for a different one, update description and the per-100g macro fields to match the new food — keep the same grams unless the instruction also changes the quantity. Reset source to "estimated" for the new food unless the instruction says otherwise.
+- If the instruction asks to remove an item, omit it from the returned array.
+- If the instruction describes adding a new ingredient, append it as a new item using the same per-100g/grams shape as the others, with source "estimated".
+${ZERO_CALORIE_BASE_GUIDELINE}
+- unit is "ml" for liquids, "g" for solids — keep an item's existing unit unless the instruction changes what the food is, in which case set unit to match the new food.
+- Every returned item must have: description, grams, unit, caloriesPer100g, proteinPer100g, carbsPer100g, fatPer100g, fiberPer100g, confidence, source.`;
+
+const RECONCILE_SYSTEM_PROMPT = `You are checking a logged meal against a photo of the actual plate, for a personal calorie-tracking app. You'll be given the currently logged items as a JSON array (in order) and a photo of the plate. Compare what's visibly on the plate to what's logged, and flag any clear discrepancies in quantity or count — e.g. 3 eggs logged but only 2 visible, or a portion that looks noticeably smaller/larger than the logged weight suggests.
+
+Guidelines:
+- Only flag discrepancies you can actually see evidence for in the photo — err toward NOT flagging when the photo is ambiguous, poorly lit, or the item isn't clearly identifiable on the plate. These are proposals a human reviews individually, not corrections that get auto-applied, but a wrong or overconfident suggestion is worse than no suggestion.
+- For each discrepancy, reference the item by its position in the given array (targetIndex, 0-based) — never by name alone, since two logged items can share a description.
+- suggestedGrams is your best estimate of what the actual weight should be based on the photo, not just a token adjustment.
+- issue is a short, specific, non-judgmental explanation a user will read, e.g. "Only 2 eggs visible on the plate, but 3 are logged."
+- message is a one-sentence overall summary, e.g. "Found 1 possible mismatch." or "Everything on the plate matches what's logged." — write it even when suggestions is empty.
+- If nothing looks off, return an empty suggestions array — do not invent a discrepancy to have something to say.`;
+
+// --- Superseded single-shot prompts, kept only for the "old path" methods
+// below (analyzeItem/analyzeItemPhoto) pending their removal in a follow-up
+// commit — see the TEXT_TURN_/PHOTO_*_TURN_ prompts above for the live
+// conversational replacements actually wired into the UI.
 
 const TEXT_ITEM_SYSTEM_PROMPT = `You are a nutrition analyst for a personal calorie-tracking app. The user is adding ONE ingredient to a meal they're building, described in their own words (e.g. "300g tomatoes", "2 eggs", "a slice of sourdough").
 
@@ -48,17 +134,6 @@ ${PER_100G_GUIDELINE}
 - grams: the quantity the user says they're eating (parse it to a number of grams — if they gave a non-gram quantity like "a serving" or "2 slices", convert using the label's own serving-size definition). If the user gave no quantity, default to one serving as defined on the label.
 - confidence: "high" when the label's numbers are clearly legible, "low" when the label is blurry or partially unreadable — still return your best-effort reading rather than zeros unless there is truly no nutrition information visible.`;
 
-const EDIT_ITEMS_SYSTEM_PROMPT = `You maintain the list of ingredients for a meal a user is building in a calorie-tracking app. You'll be given the current items as JSON and a natural-language instruction (e.g. "change the white bread to sourdough", "make the chicken 250g", "remove the fries"). Return the FULL updated items array reflecting that instruction.
-
-Guidelines:
-- Apply the instruction to whichever item(s) it clearly refers to; leave every other item exactly as it was.
-- If the instruction describes swapping one food for a different one, update description and the per-100g macro fields to match the new food — keep the same grams unless the instruction also changes the quantity.
-- If the instruction asks to remove an item, omit it from the returned array.
-- If the instruction describes adding a new ingredient, append it as a new item using the same per-100g/grams shape as the others.
-${ZERO_CALORIE_BASE_GUIDELINE}
-- unit is "ml" for liquids, "g" for solids — keep an item's existing unit unless the instruction changes what the food is, in which case set unit to match the new food.
-- Every returned item must have: description, grams, unit, caloriesPer100g, proteinPer100g, carbsPer100g, fatPer100g, fiberPer100g, confidence.`;
-
 const MEAL_ITEM_SCHEMA_FIELDS = {
   description: { type: "string", description: "Concise name for this one item" },
   grams: { type: "integer", description: "Estimated portion weight in grams" },
@@ -73,6 +148,11 @@ const MEAL_ITEM_SCHEMA_FIELDS = {
   fatPer100g: { type: "integer", description: "Fat grams per 100g of this food" },
   fiberPer100g: { type: "integer", description: "Dietary fiber grams per 100g of this food" },
   confidence: { type: "string", enum: ["low", "medium", "high"] },
+  source: {
+    type: "string",
+    enum: ["label", "estimated"],
+    description: "\"label\" when read from a nutrition label photo, \"estimated\" otherwise.",
+  },
 } as const;
 
 const MEAL_ITEM_SCHEMA_REQUIRED = [
@@ -85,9 +165,10 @@ const MEAL_ITEM_SCHEMA_REQUIRED = [
   "fatPer100g",
   "fiberPer100g",
   "confidence",
+  "source",
 ];
 
-/** Enforced server-side via structured outputs. Mirrors MealItemDraft in ../types. */
+/** Enforced server-side via structured outputs. Mirrors MealItemDraft in ../types. Used only by the superseded analyzeItem/analyzeItemPhoto below. */
 const MEAL_ITEM_SCHEMA = {
   type: "object",
   properties: MEAL_ITEM_SCHEMA_FIELDS,
@@ -113,6 +194,54 @@ const MEAL_ITEMS_SCHEMA = {
 } as const;
 
 /**
+ * `item` is deliberately NOT in `required` — a "clarify" turn omits it
+ * entirely. Structured-output support for conditional/oneOf schemas is
+ * inconsistent across providers, so the status/item relationship is
+ * enforced by `parseTurnResult` below, not by the schema itself; the schema
+ * is a backstop here, same as everywhere else in this file.
+ */
+const MEAL_TURN_SCHEMA = {
+  type: "object",
+  properties: {
+    status: { type: "string", enum: ["resolved", "clarify"] },
+    message: {
+      type: "string",
+      description: "Conversational reply shown to the user — a confirmation + prompt to continue/finish, or a clarifying question.",
+    },
+    item: {
+      type: "object",
+      properties: MEAL_ITEM_SCHEMA_FIELDS,
+      required: MEAL_ITEM_SCHEMA_REQUIRED,
+      additionalProperties: false,
+    },
+  },
+  required: ["status", "message"],
+  additionalProperties: false,
+} as const;
+
+const RECONCILE_SCHEMA = {
+  type: "object",
+  properties: {
+    message: { type: "string" },
+    suggestions: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          targetIndex: { type: "integer", description: "0-based index into the given items array" },
+          issue: { type: "string" },
+          suggestedGrams: { type: "integer" },
+        },
+        required: ["targetIndex", "issue", "suggestedGrams"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["message", "suggestions"],
+  additionalProperties: false,
+} as const;
+
+/**
  * Per-item meal-building domain logic: builds the prompt, calls the AI
  * provider, defensively parses whatever comes back. Depends only on
  * `AIProvider` — swapping `GeminiProvider` for a different implementation,
@@ -121,6 +250,105 @@ const MEAL_ITEMS_SCHEMA = {
 export class MealItemService {
   constructor(private readonly aiProvider: AIProvider) {}
 
+  /**
+   * One turn of the building-step conversation: resolves one ingredient
+   * from text and/or a photo, or asks a clarifying question instead when
+   * the input is genuinely too ambiguous to default — see TURN_GUIDELINE.
+   * `context` is passed when this call answers an earlier "clarify"
+   * response, so the model sees the full thread for this one ingredient.
+   */
+  async resolveTurn(input: {
+    text?: string;
+    image?: AIImageInput;
+    mode?: "food" | "label";
+    context?: TurnContext;
+    /** Set once MAX_CLARIFY_ROUNDS is hit — forbids another "clarify" and hard-coerces one if it happens anyway. */
+    forceResolve?: boolean;
+  }): Promise<MealTurnResult> {
+    const trimmed = input.text?.trim();
+    if (!trimmed && !input.image) {
+      throw new Error("MealItemService.resolveTurn requires text or an image.");
+    }
+
+    const baseSystem = input.image
+      ? input.mode === "label"
+        ? PHOTO_LABEL_TURN_SYSTEM_PROMPT
+        : PHOTO_FOOD_TURN_SYSTEM_PROMPT
+      : TEXT_TURN_SYSTEM_PROMPT;
+    const system = input.forceResolve ? `${baseSystem}\n${FORCE_RESOLVE_GUIDELINE}` : baseSystem;
+    const promptMode = input.image ? (input.mode === "label" ? "photo-label" : "photo-food") : "text";
+
+    const response = await this.aiProvider.complete({
+      system,
+      prompt: buildTurnPrompt(promptMode, trimmed, input.context),
+      image: input.image,
+      jsonSchema: { ...MEAL_TURN_SCHEMA },
+    });
+
+    const result = parseTurnResult(response.text, trimmed || "Item");
+    if (input.forceResolve && result.status === "clarify") {
+      // The model didn't comply — the round cap must be a guarantee, not a suggestion.
+      return {
+        status: "resolved",
+        message: "Couldn't fully pin this down after a few tries, so I've logged a rough estimate — feel free to edit it.",
+        item: emptyDraft(trimmed || "Item"),
+      };
+    }
+    return result;
+  }
+
+  /** Natural-language edit across the whole item list — see EDIT_ITEMS_SYSTEM_PROMPT. */
+  async editItems(items: MealItemDraft[], instruction: string): Promise<MealItemDraft[]> {
+    const trimmed = instruction.trim();
+    if (!trimmed) {
+      throw new Error("MealItemService.editItems requires a non-empty instruction.");
+    }
+
+    const response = await this.aiProvider.complete({
+      system: EDIT_ITEMS_SYSTEM_PROMPT,
+      prompt: `Current items:\n${JSON.stringify(items)}\n\nInstruction: "${trimmed}"`,
+      jsonSchema: { ...MEAL_ITEMS_SCHEMA },
+    });
+
+    return parseItemsArray(response.text, items);
+  }
+
+  /**
+   * Compares the logged items against a photo of the plate — proposals
+   * only, never auto-applied (see RECONCILE_SYSTEM_PROMPT). Items are sent
+   * stripped to description/grams/unit; the model references them back by
+   * array index (see ReconciliationSuggestion).
+   */
+  async reconcileWithPhoto(items: MealItemDraft[], image: AIImageInput): Promise<ReconciliationResult> {
+    if (items.length === 0) {
+      throw new Error("MealItemService.reconcileWithPhoto requires at least one existing item.");
+    }
+    if (!image.data) {
+      throw new Error("MealItemService.reconcileWithPhoto requires image data.");
+    }
+
+    const itemsForPrompt = items.map(({ description, grams, unit }) => ({
+      description,
+      grams,
+      unit: unit ?? "g",
+    }));
+
+    const response = await this.aiProvider.complete({
+      system: RECONCILE_SYSTEM_PROMPT,
+      prompt: `Logged items:\n${JSON.stringify(itemsForPrompt)}`,
+      image,
+      jsonSchema: { ...RECONCILE_SCHEMA },
+    });
+
+    return parseReconciliation(response.text, items.length);
+  }
+
+  // --- Superseded by resolveTurn() above, kept only pending removal in a
+  // follow-up commit so this one is a pure "new flow, still functional and
+  // side-by-side with the old" snapshot rather than an add+delete mixed
+  // together.
+
+  /** @deprecated superseded by resolveTurn — see class doc comment above. */
   async analyzeItem(text: string): Promise<MealItemDraft> {
     const trimmed = text.trim();
     if (!trimmed) {
@@ -136,14 +364,7 @@ export class MealItemService {
     return parseItemDraft(response.text, trimmed);
   }
 
-  /**
-   * `mode` picks the prompt: "food" identifies a dish/ingredient from the
-   * photo itself; "label" reads a printed Nutrition Facts panel. `quantityHint`
-   * is whatever the user typed alongside the photo (e.g. "150g", "150g from
-   * this label") — used as the eaten quantity when present, otherwise the
-   * model estimates it (food mode) or falls back to one label serving
-   * (label mode).
-   */
+  /** @deprecated superseded by resolveTurn — see class doc comment above. */
   async analyzeItemPhoto(
     image: AIImageInput,
     mode: "food" | "label",
@@ -172,36 +393,61 @@ export class MealItemService {
 
     return parseItemDraft(response.text, hint || "Item from photo");
   }
+}
 
-  /** Natural-language edit over the whole item list — see EDIT_ITEMS_SYSTEM_PROMPT. */
-  async editItems(items: MealItemDraft[], instruction: string): Promise<MealItemDraft[]> {
-    const trimmed = instruction.trim();
-    if (!trimmed) {
-      throw new Error("MealItemService.editItems requires a non-empty instruction.");
+/**
+ * No prior context: preserves the exact prompt phrasing the single-shot
+ * flow used. With context, renders the full exchange for this same
+ * ingredient — the caller's `context.exchange` already includes the just-
+ * submitted answer as its final entry, so `text` isn't re-rendered here
+ * (it would otherwise appear twice).
+ */
+function buildTurnPrompt(
+  mode: "text" | "photo-food" | "photo-label",
+  text: string | undefined,
+  context: TurnContext | undefined,
+): string {
+  if (context) {
+    const lines: string[] = [];
+    if (context.originalText) lines.push(`Original input: "${context.originalText}"`);
+    for (const { question, answer } of context.exchange) {
+      lines.push(`You asked: "${question}"`);
+      lines.push(`User answered: "${answer}"`);
     }
-
-    const response = await this.aiProvider.complete({
-      system: EDIT_ITEMS_SYSTEM_PROMPT,
-      prompt: `Current items:\n${JSON.stringify(items)}\n\nInstruction: "${trimmed}"`,
-      jsonSchema: { ...MEAL_ITEMS_SCHEMA },
-    });
-
-    return parseItemsArray(response.text, items);
+    lines.push("", "This is the same ingredient as above, still being resolved — use all of the exchange as context.");
+    return lines.join("\n");
   }
+
+  if (mode === "text") return text ?? "";
+
+  if (mode === "photo-label") {
+    return text
+      ? `Read this nutrition label. The user is eating: ${text}. Report the per-100g macros and the grams for that quantity.`
+      : "Read this nutrition label and report its per-100g macros. No quantity was given — default to one serving as defined on the label.";
+  }
+
+  return text
+    ? `Identify this food and report its per-100g macros. The user says the portion is: ${text}.`
+    : "Identify this food, estimate the portion size from the photo, and report its per-100g macros.";
 }
 
 /**
  * LLM output is text, not a guaranteed type — even asked nicely for JSON, a
  * real model can wrap it in prose, markdown fencing, or omit a field. This
- * never throws; malformed output degrades to a low-confidence placeholder
- * instead of failing the request.
+ * never throws; malformed output degrades to a resolved, low-confidence
+ * placeholder rather than leaving the conversation stuck unable to
+ * progress on a "clarify" it can't recover from.
  */
-function parseItemDraft(rawText: string, fallbackDescription: string): MealItemDraft {
+function parseTurnResult(rawText: string, fallbackDescription: string): MealTurnResult {
   try {
-    const parsed = JSON.parse(extractJson(rawText));
-    return draftFromParsed(parsed, fallbackDescription);
+    const parsed = JSON.parse(extractJson(rawText)) as Record<string, unknown>;
+    if (parsed.status === "clarify" && typeof parsed.message === "string" && parsed.message.trim()) {
+      return { status: "clarify", message: parsed.message };
+    }
+    const message = typeof parsed.message === "string" && parsed.message.trim() ? parsed.message : "Added.";
+    return { status: "resolved", message, item: draftFromParsed(parsed.item, fallbackDescription) };
   } catch {
-    return emptyDraft(fallbackDescription);
+    return { status: "resolved", message: "Added.", item: emptyDraft(fallbackDescription) };
   }
 }
 
@@ -214,6 +460,46 @@ function parseItemsArray(rawText: string, fallback: MealItemDraft[]): MealItemDr
     return items.map((item: unknown) => draftFromParsed(item, "Item"));
   } catch {
     return fallback;
+  }
+}
+
+/** Malformed/out-of-range suggestions are dropped rather than surfaced — see RECONCILE_SYSTEM_PROMPT's "wrong is worse than none". */
+function parseReconciliation(rawText: string, itemCount: number): ReconciliationResult {
+  try {
+    const parsed = JSON.parse(extractJson(rawText)) as Record<string, unknown>;
+    const message = typeof parsed.message === "string" ? parsed.message : "";
+    const rawSuggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
+    const suggestions = rawSuggestions
+      .map(suggestionFromParsed)
+      .filter((s): s is ReconciliationSuggestion => s !== null && s.targetIndex >= 0 && s.targetIndex < itemCount);
+    return { message, suggestions };
+  } catch {
+    return { message: "", suggestions: [] };
+  }
+}
+
+function suggestionFromParsed(parsed: unknown): ReconciliationSuggestion | null {
+  const value = (parsed ?? {}) as Record<string, unknown>;
+  const targetIndex = Number(value.targetIndex);
+  const suggestedGrams = Number(value.suggestedGrams);
+  if (!Number.isInteger(targetIndex) || !Number.isFinite(suggestedGrams) || suggestedGrams <= 0) return null;
+  if (typeof value.issue !== "string" || !value.issue.trim()) return null;
+  return { targetIndex, issue: value.issue, suggestedGrams: Math.round(suggestedGrams) };
+}
+
+/**
+ * LLM output is text, not a guaranteed type — even asked nicely for JSON, a
+ * real model can wrap it in prose, markdown fencing, or omit a field. This
+ * never throws; malformed output degrades to a low-confidence placeholder
+ * instead of failing the request. Used only by the superseded
+ * analyzeItem/analyzeItemPhoto pending removal in a follow-up commit.
+ */
+function parseItemDraft(rawText: string, fallbackDescription: string): MealItemDraft {
+  try {
+    const parsed = JSON.parse(extractJson(rawText));
+    return draftFromParsed(parsed, fallbackDescription);
+  } catch {
+    return emptyDraft(fallbackDescription);
   }
 }
 
@@ -232,6 +518,7 @@ function draftFromParsed(parsed: unknown, fallbackDescription: string): MealItem
     fatPer100g: toNonNegativeNumber(value.fatPer100g),
     fiberPer100g: toNonNegativeNumber(value.fiberPer100g),
     confidence: toConfidence(value.confidence),
+    source: toSource(value.source),
   };
 }
 
@@ -246,6 +533,7 @@ function emptyDraft(fallbackDescription: string): MealItemDraft {
     fatPer100g: 0,
     fiberPer100g: 0,
     confidence: "low",
+    source: "estimated",
   };
 }
 
@@ -265,4 +553,8 @@ function toConfidence(value: unknown): MealItemDraft["confidence"] {
 
 function toUnit(value: unknown): MealItemDraft["unit"] {
   return value === "ml" ? "ml" : "g";
+}
+
+function toSource(value: unknown): MealItemDraft["source"] {
+  return value === "label" ? "label" : "estimated";
 }
