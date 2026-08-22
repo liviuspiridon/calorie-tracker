@@ -57,11 +57,13 @@ export interface MealItem {
   confidence?: "low" | "medium" | "high";
   /**
    * How the macros were obtained — orthogonal to `confidence` (a label
-   * reading can still be low-confidence if the photo is blurry). Absent
-   * means "estimated", same as every item created before this field
-   * existed.
+   * reading can still be low-confidence if the photo is blurry). "repeated"
+   * means copied verbatim from a past logging via reference matching (see
+   * reference-history.ts) rather than freshly estimated or read off a
+   * label. Absent means "estimated", same as every item created before
+   * this field existed.
    */
-  source?: "label" | "estimated";
+  source?: "label" | "estimated" | "repeated";
 }
 
 /** What the AI returns for one item — everything but the client-generated id. */
@@ -97,6 +99,37 @@ export interface MealTurnResult {
 export interface TurnContext {
   originalText?: string;
   exchange: { question: string; answer: string }[];
+}
+
+/**
+ * One recent ingredient occurrence, offered to `resolveTurn` as
+ * reference-matching context (see reference-history.ts) — a compact
+ * subset of MealItem. `id` is a short synthetic ref ("h0", "h1", ...) for
+ * the model to point back at, not the real MealItem id.
+ */
+export interface HistoryItem {
+  id: string;
+  description: string;
+  grams: number;
+  unit?: "g" | "ml";
+  caloriesPer100g: number;
+  proteinPer100g: number;
+  carbsPer100g: number;
+  fatPer100g: number;
+  fiberPer100g: number;
+  confidence?: "low" | "medium" | "high";
+  source?: "label" | "estimated" | "repeated";
+}
+
+/**
+ * One recently-logged meal, offered as reference-matching context.
+ * `time` (HH:MM local) is the only available proxy for "breakfast" vs
+ * "dinner" — the meals table has no stored meal-type category.
+ */
+export interface HistoryMeal {
+  date: string;
+  time: string;
+  items: HistoryItem[];
 }
 
 /**

@@ -277,6 +277,7 @@ export function TodayDashboard() {
         onOpenChange={handleLogMealOpenChange}
         onSave={handleSaveMeal}
         editingMeal={editingMeal}
+        meals={meals}
       />
       <EditTargetsSheet
         open={editTargetsOpen}

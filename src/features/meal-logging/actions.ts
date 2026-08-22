@@ -3,7 +3,7 @@
 import { GeminiProvider } from "@/lib/ai/gemini-provider";
 
 import { MealItemService } from "./server/meal-item-service";
-import type { MealItemDraft, MealTurnResult, ReconciliationResult, TurnContext } from "./types";
+import type { HistoryMeal, MealItemDraft, MealTurnResult, ReconciliationResult, TurnContext } from "./types";
 
 const mealItemService = new MealItemService(new GeminiProvider());
 
@@ -43,6 +43,8 @@ export async function resolveMealTurn(input: {
   mode?: "food" | "label";
   context?: TurnContext;
   forceResolve?: boolean;
+  history?: HistoryMeal[];
+  historyDate?: string;
 }): Promise<MealTurnResult> {
   if (input.image) validateImage(input.image);
   return mealItemService.resolveTurn(input);

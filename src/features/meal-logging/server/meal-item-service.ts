@@ -2,6 +2,7 @@ import { extractJson } from "@/lib/ai/extract-json";
 import type { AIImageInput, AIProvider } from "@/lib/ai/provider";
 
 import type {
+  HistoryMeal,
   MealItemDraft,
   MealTurnResult,
   ReconciliationResult,
@@ -47,6 +48,21 @@ const TURN_GUIDELINE = `- If this input is genuinely too ambiguous to give a rea
  * suggestion instead of a guarantee.
  */
 const FORCE_RESOLVE_GUIDELINE = `- IMPORTANT: This ingredient has already been through multiple rounds of clarification without fully resolving. Do NOT ask another question. Set status to "resolved" now, using your best-effort guess for whatever is still uncertain, and set confidence to "low" to reflect that. In \`message\`, briefly say this is a rough estimate the user can edit.`;
+
+/**
+ * Appended only when the caller attaches recent-history context (see
+ * reference-history.ts's looksLikeReference — a cheap client-side gate, so
+ * this never runs on the common case of a fresh description). Recent
+ * meals are given below as JSON, grouped by meal: each has a date, a local
+ * time (the only available proxy for "breakfast" vs "dinner" — there's no
+ * stored meal-type category), and its items.
+ */
+const REFERENCE_GUIDELINE = `- The user may be referencing a previously-logged ingredient instead of describing a fresh one (e.g. "like yesterday", "the usual hummus", "same as Friday's dinner"). Recent meals are given below as JSON for exactly this. If the input doesn't actually reference past food, ignore this entirely and proceed normally.
+- Match semantically, not by exact text — "humus", "hummus", and "pastă de năut" are the same food. Prefer more recent occurrences as a tie-breaker when several equally plausible matches exist for a vague/frequent reference (e.g. "the usual").
+- An explicit date/day reference ("like yesterday", "like Friday's dinner"): look only at that date's meal(s). Exactly one meal that date with one plausible matching item -> resolved directly. More than one meal that date -> "clarify", distinguishing them by their time (e.g. "the morning one or the evening one?"). When naming the date in \`message\`, use the literal date (e.g. "on the 20th") rather than re-deriving a relative day-word like "yesterday"/"the day before yesterday" — you're given today's date and the meal's date as two separate facts, and restating one as a word phrased relative to the other is an easy place to get the direction backwards.
+- A vague/frequent reference ("the usual X", "same as always"): search the whole window. One dominant, unambiguous match (or several occurrences that all share the same values) -> resolved directly, even if it occurred more than once — repetition of the SAME item is confirmation, not ambiguity, and must never by itself trigger "clarify". Only genuinely distinct items — different \`description\` strings in the data, or the same one logged with different grams/macros — count as separate options. Multiple such distinct plausible matches -> "clarify", naming only options that literally appear in the given history (their real \`description\` values) — never invent variants, flavors, or types that aren't present in the data.
+- When resolving from a match: copy grams, unit, and all four per-100g macro fields VERBATIM from the matched history item — this is reuse, not re-estimation, so don't recompute or round them differently. If the user's input also gives an explicit adjustment (e.g. "like yesterday but 2 slices"), apply it to grams only; the per-100g rates stay identical. Set confidence to the SAME value the matched history item had — reusing a rough guess doesn't make it more certain. Set source to "repeated". In \`message\`, name what was reused (e.g. "same as yesterday", "same as your usual").
+- If nothing in the given history plausibly matches, don't force it — proceed exactly as if no history had been given, estimating fresh with source "estimated".`;
 
 const TEXT_TURN_SYSTEM_PROMPT = `You are a nutrition analyst for a personal calorie-tracking app, having a short back-and-forth with the user as they build a meal one ingredient at a time. They just described ONE ingredient in their own words (e.g. "300g tomatoes", "2 eggs", "a slice of sourdough").
 
@@ -118,8 +134,9 @@ const MEAL_ITEM_SCHEMA_FIELDS = {
   confidence: { type: "string", enum: ["low", "medium", "high"] },
   source: {
     type: "string",
-    enum: ["label", "estimated"],
-    description: "\"label\" when read from a nutrition label photo, \"estimated\" otherwise.",
+    enum: ["label", "estimated", "repeated"],
+    description:
+      "\"label\" when read from a nutrition label photo, \"repeated\" when copied from a past logging via reference matching, \"estimated\" otherwise.",
   },
 } as const;
 
@@ -224,6 +241,10 @@ export class MealItemService {
     context?: TurnContext;
     /** Set once MAX_CLARIFY_ROUNDS is hit — forbids another "clarify" and hard-coerces one if it happens anyway. */
     forceResolve?: boolean;
+    /** Recent meals for reference matching ("like yesterday", "the usual X") — see reference-history.ts. Only ever attached when looksLikeReference fires client-side, so the common fresh-description turn never pays this cost. */
+    history?: HistoryMeal[];
+    /** Client's local YYYY-MM-DD "today" — the only anchor the model has for relative words like "yesterday"; without it, "date" values in `history` are just floating strings it has to guess an origin for. Required whenever `history` is given. */
+    historyDate?: string;
   }): Promise<MealTurnResult> {
     const trimmed = input.text?.trim();
     if (!trimmed && !input.image) {
@@ -235,12 +256,14 @@ export class MealItemService {
         ? PHOTO_LABEL_TURN_SYSTEM_PROMPT
         : PHOTO_FOOD_TURN_SYSTEM_PROMPT
       : TEXT_TURN_SYSTEM_PROMPT;
-    const system = input.forceResolve ? `${baseSystem}\n${FORCE_RESOLVE_GUIDELINE}` : baseSystem;
+    const system = [baseSystem, input.forceResolve && FORCE_RESOLVE_GUIDELINE, input.history?.length && REFERENCE_GUIDELINE]
+      .filter(Boolean)
+      .join("\n");
     const promptMode = input.image ? (input.mode === "label" ? "photo-label" : "photo-food") : "text";
 
     const response = await this.aiProvider.complete({
       system,
-      prompt: buildTurnPrompt(promptMode, trimmed, input.context),
+      prompt: buildTurnPrompt(promptMode, trimmed, input.context, input.history, input.historyDate),
       image: input.image,
       jsonSchema: { ...MEAL_TURN_SCHEMA },
     });
@@ -309,9 +332,23 @@ export class MealItemService {
  * flow used. With context, renders the full exchange for this same
  * ingredient — the caller's `context.exchange` already includes the just-
  * submitted answer as its final entry, so `text` isn't re-rendered here
- * (it would otherwise appear twice).
+ * (it would otherwise appear twice). `history`, when given, is appended
+ * regardless of context/mode — reference matching can apply to a fresh
+ * turn or a clarify continuation alike.
  */
 function buildTurnPrompt(
+  mode: "text" | "photo-food" | "photo-label",
+  text: string | undefined,
+  context: TurnContext | undefined,
+  history: HistoryMeal[] | undefined,
+  historyDate: string | undefined,
+): string {
+  const base = buildBaseTurnPrompt(mode, text, context);
+  if (!history?.length) return base;
+  return `${base}\n\nToday's date is ${historyDate} (YYYY-MM-DD) — use it to resolve relative dates below.\nRecent meals (for reference matching):\n${JSON.stringify(history)}`;
+}
+
+function buildBaseTurnPrompt(
   mode: "text" | "photo-food" | "photo-label",
   text: string | undefined,
   context: TurnContext | undefined,
@@ -449,5 +486,5 @@ function toUnit(value: unknown): MealItemDraft["unit"] {
 }
 
 function toSource(value: unknown): MealItemDraft["source"] {
-  return value === "label" ? "label" : "estimated";
+  return value === "label" || value === "repeated" ? value : "estimated";
 }

@@ -14,11 +14,14 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { fileToCompressedBase64 } from "@/lib/image";
 import { TODAY, TODAY_FONT } from "@/lib/today-theme";
+import { formatLocalDate } from "@/lib/utils";
 
 import { editMealItems, reconcileMealWithPhoto, resolveMealTurn } from "../actions";
+import { buildRecentHistory, looksLikeReference } from "../reference-history";
 import {
   lowestConfidence,
   sumItemMacros,
+  type HistoryMeal,
   type MealItem,
   type MealItemDraft,
   type MealLogEntry,
@@ -56,6 +59,10 @@ interface PendingClarification {
   photo: PendingPhoto | null;
   exchange: { question: string; answer: string }[];
   lastQuestion: string;
+  /** Set when the ingredient this clarification is resolving was detected as a history reference — carried to every continuation reply so it isn't lost mid-thread. See looksLikeReference. */
+  history?: HistoryMeal[];
+  /** The "today" anchor `history` was built relative to — carried alongside it for the same reason. */
+  historyDate?: string;
 }
 
 function withId(draft: MealItemDraft): MealItem {
@@ -114,6 +121,7 @@ export function MealBuilderSheet({
   onOpenChange,
   onSave,
   editingMeal,
+  meals,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -121,6 +129,8 @@ export function MealBuilderSheet({
    *  caller uses it to decide whether a post-log nudge makes sense. */
   onSave: (entry: MealLogEntry, isNewEntry: boolean) => void;
   editingMeal?: MealLogEntry | null;
+  /** Recent meal history for "like yesterday"/"the usual X" reference matching — see reference-history.ts. Already fetched by the caller's useMealLog(), no separate query needed here. */
+  meals: MealLogEntry[];
 }) {
   const [step, setStep] = React.useState<BuilderStep>("building");
   const [items, setItems] = React.useState<MealItem[]>([]);
@@ -278,12 +288,22 @@ export function MealBuilderSheet({
       const questionsAsked = clarifying ? clarifying.exchange.length + 1 : 0;
       const forceResolve = questionsAsked >= MAX_CLARIFY_ROUNDS;
 
+      // Reference detection only runs on a fresh ingredient — a clarify
+      // continuation (e.g. "cel de luni") carries forward whatever the
+      // first turn decided, rather than re-running a heuristic that a
+      // short reply might not match on its own.
+      const isReference = clarifying ? !!clarifying.history : looksLikeReference(trimmed);
+      const history = clarifying ? clarifying.history : isReference ? buildRecentHistory(meals) : undefined;
+      const historyDate = clarifying ? clarifying.historyDate : isReference ? formatLocalDate(new Date()) : undefined;
+
       const result = await resolveMealTurn({
         text: trimmed || undefined,
         image: activePhoto ? { data: activePhoto.base64, mimeType: activePhoto.mimeType } : undefined,
         mode: activePhoto?.mode,
         context,
         forceResolve,
+        history,
+        historyDate,
       });
 
       setFeed((prev) => [
@@ -297,6 +317,8 @@ export function MealBuilderSheet({
           photo: activePhoto,
           exchange: context?.exchange ?? [],
           lastQuestion: result.message,
+          history,
+          historyDate,
         });
       } else {
         setPendingClarification(null);
