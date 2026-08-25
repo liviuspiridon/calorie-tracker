@@ -110,17 +110,21 @@ function itemFromAnalysis(analysis: MealLogEntry["analysis"]): MealItem {
  * ephemeral component state; nothing is persisted until "Salvează masa"
  * builds the final MealLogEntry and hands it to `onSave`.
  *
- * `editingMeal`, when set, opens straight into the review step: seeded from
- * `editingMeal.items` when present, or a single synthetic item built from
- * the legacy aggregate `analysis` for meals logged before the builder
- * existed. Saving updates the existing entry (same id/loggedAt) instead of
- * creating a new one — there's no separate "edit meal" UI.
+ * `reviewSeed`, when set, opens straight into the review step: seeded from
+ * `reviewSeed.meal.items` when present, or a single synthetic item built
+ * from the legacy aggregate `analysis` for meals logged before the builder
+ * existed. Its `isNew` flag separates the two callers. False is an edit of
+ * an existing row: saving reuses its id/loggedAt and updates in place, so
+ * there's no separate "edit meal" UI. True is "Log again today": the caller
+ * hands over an already-fresh entry (new id, now's timestamp) carrying the
+ * source meal's items verbatim, so saving inserts a new row and the
+ * post-log nudge still fires.
  */
 export function MealBuilderSheet({
   open,
   onOpenChange,
   onSave,
-  editingMeal,
+  reviewSeed,
   meals,
 }: {
   open: boolean;
@@ -128,7 +132,7 @@ export function MealBuilderSheet({
   /** `isNewEntry` is false when this is an edit to an existing meal — the
    *  caller uses it to decide whether a post-log nudge makes sense. */
   onSave: (entry: MealLogEntry, isNewEntry: boolean) => void;
-  editingMeal?: MealLogEntry | null;
+  reviewSeed?: { meal: MealLogEntry; isNew: boolean } | null;
   /** Recent meal history for "like yesterday"/"the usual X" reference matching — see reference-history.ts. Already fetched by the caller's useMealLog(), no separate query needed here. */
   meals: MealLogEntry[];
 }) {
@@ -175,12 +179,12 @@ export function MealBuilderSheet({
 
   React.useEffect(() => {
     if (!open) return;
-    if (editingMeal) {
-      const seeded = editingMeal.items?.length
-        ? editingMeal.items
-        : [itemFromAnalysis(editingMeal.analysis)];
+    if (reviewSeed) {
+      const seeded = reviewSeed.meal.items?.length
+        ? reviewSeed.meal.items
+        : [itemFromAnalysis(reviewSeed.meal.analysis)];
       setItems(seeded);
-      setMealName(editingMeal.analysis.description);
+      setMealName(reviewSeed.meal.analysis.description);
       setStep("review");
     } else {
       setItems([]);
@@ -196,7 +200,7 @@ export function MealBuilderSheet({
     setPendingClarification(null);
     setReconciliation(null);
     setReconcileError(null);
-  }, [open, editingMeal]);
+  }, [open, reviewSeed]);
 
   // Dictation only makes sense on the building step of an open sheet.
   React.useEffect(() => {
@@ -418,10 +422,10 @@ export function MealBuilderSheet({
       ...totals,
       confidence: lowestConfidence(items),
     };
-    const entry: MealLogEntry = editingMeal
-      ? { ...editingMeal, analysis, items }
+    const entry: MealLogEntry = reviewSeed
+      ? { ...reviewSeed.meal, analysis, items }
       : { id: crypto.randomUUID(), loggedAt: new Date().toISOString(), analysis, items };
-    onSave(entry, !editingMeal);
+    onSave(entry, reviewSeed ? reviewSeed.isNew : true);
     resetSession();
     onOpenChange(false);
   }
@@ -440,7 +444,7 @@ export function MealBuilderSheet({
           <>
             <div className="flex shrink-0 items-center justify-between px-[22px]">
               <SheetTitle className="text-[15px] font-bold" style={{ color: TODAY.ink }}>
-                {editingMeal ? "Edit meal" : "Log a meal"}
+                {reviewSeed && !reviewSeed.isNew ? "Edit meal" : "Log a meal"}
               </SheetTitle>
               <button
                 type="button"

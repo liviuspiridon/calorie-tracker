@@ -39,7 +39,7 @@ export function TodayDashboard() {
   const [calendarOpen, setCalendarOpen] = React.useState(false);
   const [mealDetailOpen, setMealDetailOpen] = React.useState(false);
   const [activeMeal, setActiveMeal] = React.useState<MealLogEntry | null>(null);
-  const [editingMeal, setEditingMeal] = React.useState<MealLogEntry | null>(null);
+  const [reviewSeed, setReviewSeed] = React.useState<{ meal: MealLogEntry; isNew: boolean } | null>(null);
   const [revealed, setRevealed] = React.useState(false);
 
   const now = new Date();
@@ -140,25 +140,34 @@ export function TodayDashboard() {
 
   function handleLogMealOpenChange(open: boolean) {
     setLogMealOpen(open);
-    if (!open) setEditingMeal(null);
+    if (!open) setReviewSeed(null);
   }
 
   function handleEditMeal(meal: MealLogEntry) {
-    setEditingMeal(meal);
+    setReviewSeed({ meal, isNew: false });
     setLogMealOpen(true);
   }
 
+  /**
+   * Opens the builder's review step on a fresh entry that carries the source
+   * meal's `items` verbatim, so each ingredient stays its own editable card
+   * and can be re-weighed, removed, or added to before saving. Copying only
+   * the aggregate `analysis` would collapse them into the single synthetic
+   * 100g item `itemFromAnalysis` produces for legacy meals.
+   */
   function handleLogAgain(meal: MealLogEntry) {
-    handleSaveMeal(
-      {
+    setReviewSeed({
+      meal: {
         id: crypto.randomUUID(),
         loggedAt: new Date().toISOString(),
         analysis: meal.analysis,
+        items: meal.items,
         note: meal.note,
       },
-      true,
-    );
+      isNew: true,
+    });
     setSelectedDate(now);
+    setLogMealOpen(true);
   }
 
   function handleDeleteMeal(meal: MealLogEntry) {
@@ -276,7 +285,7 @@ export function TodayDashboard() {
         open={logMealOpen}
         onOpenChange={handleLogMealOpenChange}
         onSave={handleSaveMeal}
-        editingMeal={editingMeal}
+        reviewSeed={reviewSeed}
         meals={meals}
       />
       <EditTargetsSheet
