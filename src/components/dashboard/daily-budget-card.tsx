@@ -1,43 +1,66 @@
 "use client";
 
+import { CheckIcon } from "lucide-react";
+
+import { computeCalorieRing, type CalorieRingSegmentKey } from "@/features/goals/lib/calorie-ring";
 import { useCountUp } from "@/hooks/use-count-up";
 
 import { TODAY } from "@/lib/today-theme";
 
-/** Fixed daily calorie deficit visualized at the right end of the meter. */
-const TARGET_DEFICIT_KCAL = 550;
-/** Blocks narrower than this hide their value label entirely. */
-const HIDE_LABEL_BELOW_PCT = 4;
-/** Below this width, the middle block's remaining label flips above the bar. */
-const FLIP_REMAINING_BELOW_PCT = 12;
+/**
+ * Gauge geometry, in the SVG's own user units. The arc is open at the
+ * bottom: it sweeps ARC_SWEEP degrees clockwise from ARC_START (measured
+ * from 3 o'clock), leaving the remainder as the gap the two flanking
+ * figures sit beside. The viewBox is cropped below the arc's lowest point
+ * so the open bottom costs no vertical space.
+ */
+const ARC_SWEEP = 250;
+const ARC_START = 90 + (360 - ARC_SWEEP) / 2;
+const BOX_W = 208;
+const BOX_H = 172;
+const CX = 104;
+const CY = 104;
+const RING_RADIUS = 86;
+const RING_WIDTH = 15;
+/** Cleared between slices so neighbours read as separate. Butt caps keep every arc's length exactly proportional. */
+const SEGMENT_GAP = 3.4;
+/** Thin arc drawn outside the gauge once eating passes maintenance. */
+const SURPLUS_RADIUS = RING_RADIUS + RING_WIDTH / 2 + 7;
+const SURPLUS_WIDTH = 4;
+
+const CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+/** Path length of the drawn arc — the full 100% the segments divide up. */
+const SWEEP_LENGTH = (ARC_SWEEP / 360) * CIRCUMFERENCE;
+const SURPLUS_CIRCUMFERENCE = 2 * Math.PI * SURPLUS_RADIUS;
+const SURPLUS_SWEEP_LENGTH = (ARC_SWEEP / 360) * SURPLUS_CIRCUMFERENCE;
+
+/** Same roles the previous horizontal meter used, so the palette reads unchanged. */
+const SEGMENT_COLOR: Record<CalorieRingSegmentKey, string> = {
+  consumed: TODAY.ink,
+  available: TODAY.accent,
+  active: TODAY.accentInk,
+  deficit: TODAY.clayFill,
+};
 
 /**
- * The hero surface: headline countdown, the 3-block budget meter, and the
- * protein row.
+ * The hero surface: an open gauge arc of the day's calorie envelope with
+ * the remaining-kcal headline at its centre, consumed and burned flanking
+ * it, and the two macro goals as cards below.
  *
- * Meter model (left to right, gap-separated): consumed (ink) | remaining
- * (one continuous hybrid block: available base budget in lime flowing into
- * the training bonus in olive via a hard-stop gradient — no internal gap) |
- * fixed target deficit (pale lime). The bar's total is base + active +
- * deficit; over-eating erodes right-to-left: available first, then the
- * training bonus, then the planned deficit.
+ * The full arc is resting energy + active calories. Its four slices run end
+ * to end along the arc: consumed, what's still eatable (split into the base
+ * remainder and the activity bonus so the bonus stays visible), and the
+ * planned deficit. Eating erodes them from the far end inward, so the
+ * deficit slice only starts shrinking once the food budget is gone — see
+ * computeCalorieRing, which owns that arithmetic.
  *
- * Labels: consumed and deficit values center below their blocks. The middle
- * block's below-label is the TOTAL remaining (base remaining + training
- * remaining) — by construction the same value as the big headline. The
- * "+N kcal" active badge sits above the bar, centered on the olive
- * sub-segment. Anti-collision: when the middle block narrows past
- * FLIP_REMAINING_BELOW_PCT its label flips above (and the active badge
- * yields — at that width the two would overlap, and the flipped total
- * already is mostly the training remainder). Near-zero blocks hide their
- * labels.
- *
- * The deficit is visualization only — the headline and pacing math still
- * treat base + active as the eatable budget.
+ * Protein and fiber are deliberately styled as goals to fill rather than
+ * ceilings to stay under: they complete, and say so, instead of turning red.
  */
 export function DailyBudgetCard({
   caloriesConsumed,
-  calorieTarget,
+  bmr,
+  targetDeficit,
   activeCalories,
   proteinConsumed,
   proteinTarget,
@@ -45,112 +68,43 @@ export function DailyBudgetCard({
   fiberTarget,
 }: {
   caloriesConsumed: number;
-  /** Base daily target — activity raises the effective budget on top of it. */
-  calorieTarget: number;
+  /** Resting energy — the full arc is this plus activity. */
+  bmr: number;
+  /** Planned daily deficit, held back from the eatable budget. */
+  targetDeficit: number;
   activeCalories: number;
   proteinConsumed: number;
   proteinTarget: number;
   fiberConsumed: number;
   fiberTarget: number;
 }) {
-  const effectiveTarget = calorieTarget + activeCalories;
-  const isOver = caloriesConsumed > effectiveTarget;
-  const caloriesRemaining = Math.max(0, effectiveTarget - caloriesConsumed);
-  const caloriesOver = Math.max(0, caloriesConsumed - effectiveTarget);
-  const calorieDisplay = useCountUp(isOver ? caloriesOver : caloriesRemaining);
+  const ring = computeCalorieRing({ bmr, targetDeficit, activeCalories, caloriesConsumed });
+  const centerValue = useCountUp(Math.round(ring.remaining));
 
-  const proteinPct = proteinTarget > 0 ? Math.min(1, proteinConsumed / proteinTarget) * 100 : 0;
-  const fiberPct = fiberTarget > 0 ? Math.min(1, fiberConsumed / fiberTarget) * 100 : 0;
+  // Lay the slices end to end along the arc, dropping any too small to
+  // survive its own gap — a sliver thinner than the gap would render as a
+  // stray tick rather than a segment.
+  let cursor = 0;
+  const arcs = ring.segments
+    .map((segment) => {
+      const length = (segment.kcal / ring.arcTotal) * SWEEP_LENGTH;
+      const start = cursor;
+      cursor += length;
+      return { key: segment.key, length, start };
+    })
+    .filter((arc) => arc.length > SEGMENT_GAP);
 
-  const envelope = calorieTarget + activeCalories + TARGET_DEFICIT_KCAL;
-  const overBase = Math.max(0, caloriesConsumed - calorieTarget);
-  const overTraining = Math.max(0, overBase - activeCalories);
+  const surplusLength = Math.min(1, ring.surplus / ring.arcTotal) * SURPLUS_SWEEP_LENGTH;
 
-  const consumedKcal = Math.min(caloriesConsumed, envelope);
-  const availableKcal = Math.max(0, calorieTarget - caloriesConsumed);
-  const trainingKcal = Math.max(0, activeCalories - overBase);
-  // availableKcal + trainingKcal === caloriesRemaining, so the middle
-  // block's label always matches the headline exactly.
-  const deficitKcal = Math.max(0, TARGET_DEFICIT_KCAL - overTraining);
-
-  const toPct = (kcal: number) => (kcal / envelope) * 100;
-  const consumedPct = toPct(consumedKcal);
-  const remainingPct = toPct(caloriesRemaining);
-  const trainingPct = toPct(trainingKcal);
-  const deficitPct = toPct(deficitKcal);
-
-  // Where the lime available part hands over to the olive training part,
-  // as a fraction of the middle block itself (drives the gradient split).
-  const trainingSplitPct =
-    caloriesRemaining > 0 ? (availableKcal / caloriesRemaining) * 100 : 0;
-
-  const remainingFlipsAbove =
-    remainingPct >= HIDE_LABEL_BELOW_PCT && remainingPct < FLIP_REMAINING_BELOW_PCT;
-
-  const blocks = [
-    {
-      key: "consumed",
-      pct: consumedPct,
-      background: TODAY.ink,
-    },
-    {
-      key: "remaining",
-      pct: remainingPct,
-      background: `linear-gradient(to right, ${TODAY.accent} 0%, ${TODAY.accent} ${trainingSplitPct}%, ${TODAY.accentInk} ${trainingSplitPct}%, ${TODAY.accentInk} 100%)`,
-    },
-    {
-      key: "deficit",
-      pct: deficitPct,
-      // Soft clay — a warm counterpoint to the cool green "eatable" middle,
-      // tuned (see today-theme.ts) to sit at the pale-lime's old lightness
-      // so the deficit stays the quietest segment.
-      background: TODAY.clayFill,
-    },
-  ];
-  const bars = blocks.filter((block) => block.pct > 0.1);
-
-  const belowLabels = [
-    {
-      key: "consumed",
-      show: consumedPct >= HIDE_LABEL_BELOW_PCT,
-      center: clampPct(consumedPct / 2),
-      color: TODAY.ink40,
-      text: `${Math.round(consumedKcal).toLocaleString()} kcal`,
-    },
-    {
-      key: "remaining",
-      show: remainingPct >= FLIP_REMAINING_BELOW_PCT,
-      center: clampPct(consumedPct + remainingPct / 2),
-      color: TODAY.ink45,
-      text: `${Math.round(caloriesRemaining).toLocaleString()} kcal`,
-    },
-    {
-      key: "deficit",
-      show: deficitPct >= HIDE_LABEL_BELOW_PCT,
-      center: clampPct(consumedPct + remainingPct + deficitPct / 2),
-      color: TODAY.ink40,
-      text: `${Math.round(deficitKcal).toLocaleString()} kcal`,
-    },
-  ].filter((label) => label.show);
-
-  const aboveLabels = [
-    // The active badge, centered on the olive sub-segment. It yields when
-    // the remaining label flips up — at that width they'd overlap.
-    {
-      key: "training",
-      show: trainingPct >= HIDE_LABEL_BELOW_PCT && !remainingFlipsAbove,
-      center: clampPct(consumedPct + toPct(availableKcal) + trainingPct / 2),
-      color: TODAY.accentInk,
-      text: `+${Math.round(trainingKcal).toLocaleString()} kcal`,
-    },
-    {
-      key: "remaining-flipped",
-      show: remainingFlipsAbove,
-      center: clampPct(consumedPct + remainingPct / 2),
-      color: TODAY.ink45,
-      text: `${Math.round(caloriesRemaining).toLocaleString()} kcal`,
-    },
-  ].filter((label) => label.show);
+  const headline = ring.isOverMaintenance
+    ? {
+        dot: TODAY.clay,
+        glow: "rgba(191,122,94,0.28)",
+        label: `Over maintenance · +${Math.round(ring.surplus).toLocaleString()}`,
+      }
+    : ring.isOverBudget
+      ? { dot: TODAY.clay, glow: "rgba(191,122,94,0.28)", label: "Into your deficit" }
+      : { dot: TODAY.accent, glow: "rgba(199,240,74,0.3)", label: "Calories remaining" };
 
   return (
     <div
@@ -163,133 +117,181 @@ export function DailyBudgetCard({
             width: 7,
             height: 7,
             borderRadius: "50%",
-            background: TODAY.accent,
-            boxShadow: "0 0 0 3px rgba(199,240,74,0.3)",
+            background: headline.dot,
+            boxShadow: `0 0 0 3px ${headline.glow}`,
           }}
         />
         <span
           className="font-mono text-[11px] font-semibold tracking-[0.15em] uppercase"
           style={{ color: TODAY.ink45 }}
         >
-          {isOver ? "Calories over" : "Calories remaining"}
+          {headline.label}
         </span>
       </div>
 
-      <div className="mt-3 flex items-baseline gap-[11px]">
-        <span
-          className="text-[78px] leading-[0.82] font-extrabold tracking-[-0.05em] tabular-nums"
-          style={{ color: TODAY.ink }}
-        >
-          {calorieDisplay.toLocaleString()}
-        </span>
-        <span className="text-base font-semibold" style={{ color: TODAY.ink40 }}>
-          {isOver ? "kcal over" : "kcal left"}
-        </span>
-      </div>
+      <div className="mt-4 flex items-center">
+        <FlankStat label="Consumed" value={caloriesConsumed} dot={TODAY.ink} />
 
-      <div className="mt-4">
-        {/* Both label rails keep a fixed height even when empty, so a flip
-            never shifts the card's vertical rhythm. */}
-        <div className="relative mb-[6px] h-[13px]">
-          {aboveLabels.map((label) => (
-            <span
-              key={label.key}
-              className="absolute -translate-x-1/2 font-mono text-[10px] font-medium whitespace-nowrap tabular-nums transition-[left] duration-700 ease-out"
-              style={{ left: `${label.center}%`, color: label.color }}
-            >
-              {label.text}
-            </span>
-          ))}
-        </div>
+        <div className="relative min-w-0 flex-1" style={{ aspectRatio: `${BOX_W} / ${BOX_H}` }}>
+          <svg viewBox={`0 0 ${BOX_W} ${BOX_H}`} className="absolute inset-0 h-full w-full">
+            <g transform={`rotate(${ARC_START} ${CX} ${CY})`}>
+              {/* Shortened by one stroke width and nudged forward by half of
+                  it, so the round caps land exactly on the arc's ends. */}
+              <circle
+                cx={CX}
+                cy={CY}
+                r={RING_RADIUS}
+                fill="none"
+                stroke={TODAY.track}
+                strokeWidth={RING_WIDTH}
+                strokeLinecap="round"
+                strokeDasharray={`${SWEEP_LENGTH - RING_WIDTH} ${CIRCUMFERENCE - SWEEP_LENGTH + RING_WIDTH}`}
+                strokeDashoffset={-RING_WIDTH / 2}
+              />
+              {arcs.map((arc) => {
+                const dash = arc.length - SEGMENT_GAP;
+                return (
+                  <circle
+                    key={arc.key}
+                    cx={CX}
+                    cy={CY}
+                    r={RING_RADIUS}
+                    fill="none"
+                    stroke={SEGMENT_COLOR[arc.key]}
+                    strokeWidth={RING_WIDTH}
+                    strokeLinecap="butt"
+                    strokeDasharray={`${dash} ${CIRCUMFERENCE - dash}`}
+                    strokeDashoffset={-arc.start}
+                    style={{
+                      transition:
+                        "stroke-dasharray 700ms ease-out, stroke-dashoffset 700ms ease-out",
+                    }}
+                  />
+                );
+              })}
+              {ring.surplus > 0 && (
+                <circle
+                  cx={CX}
+                  cy={CY}
+                  r={SURPLUS_RADIUS}
+                  fill="none"
+                  stroke={TODAY.clay}
+                  strokeWidth={SURPLUS_WIDTH}
+                  strokeLinecap="round"
+                  strokeDasharray={`${surplusLength} ${SURPLUS_CIRCUMFERENCE - surplusLength}`}
+                  style={{ transition: "stroke-dasharray 700ms ease-out" }}
+                />
+              )}
+            </g>
+          </svg>
 
-        <div className="flex h-4 gap-[3px]">
-          {bars.map((block, index) => (
-            <div
-              key={block.key}
-              className="transition-[width] duration-700 ease-out"
-              style={{
-                width: `${block.pct}%`,
-                background: block.background,
-                borderRadius: segmentRadius(index, bars.length),
-              }}
-            />
-          ))}
-        </div>
-
-        <div className="relative mt-[6px] h-[13px]">
-          {belowLabels.map((label) => (
-            <span
-              key={label.key}
-              className="absolute -translate-x-1/2 font-mono text-[10px] font-medium whitespace-nowrap tabular-nums transition-[left] duration-700 ease-out"
-              style={{ left: `${label.center}%`, color: label.color }}
-            >
-              {label.text}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="my-[22px] h-px" style={{ background: TODAY.hairline }} />
-
-      <div className="flex items-center gap-[14px]">
-        <span
-          className="text-[12.5px] font-semibold whitespace-nowrap"
-          style={{ color: TODAY.ink60 }}
-        >
-          Protein
-        </span>
-        <div
-          className="h-[5px] flex-1 overflow-hidden rounded-full"
-          style={{ background: TODAY.track }}
-        >
+          {/* Centred on the arc's centre, not the cropped box's. */}
           <div
-            className="h-full rounded-full transition-[width] duration-700 ease-out"
-            style={{ width: `${proteinPct}%`, background: TODAY.ink50 }}
-          />
+            className="absolute inset-x-0 flex flex-col items-center"
+            style={{ top: `${(CY / BOX_H) * 100}%`, transform: "translateY(-50%)" }}
+          >
+            <span
+              className="text-[40px] leading-[0.9] font-extrabold tracking-[-0.045em] tabular-nums"
+              style={{ color: TODAY.ink }}
+            >
+              {centerValue.toLocaleString()}
+            </span>
+            <span className="mt-1 text-[11.5px] font-semibold" style={{ color: TODAY.ink40 }}>
+              {ring.remaining < 0 ? "kcal past budget" : "kcal left"}
+            </span>
+          </div>
         </div>
-        <span className="font-mono text-xs whitespace-nowrap tabular-nums" style={{ color: TODAY.ink50 }}>
-          <b className="font-medium" style={{ color: TODAY.ink }}>
-            {proteinConsumed}
-          </b>
-          /{proteinTarget}g
-        </span>
+
+        <FlankStat label="Burned" value={activeCalories} dot={TODAY.accentInk} />
       </div>
 
-      <div className="mt-3 flex items-center gap-[14px]">
-        <span
-          className="text-[12.5px] font-semibold whitespace-nowrap"
-          style={{ color: TODAY.ink60 }}
-        >
-          Fiber
-        </span>
-        <div
-          className="h-[5px] flex-1 overflow-hidden rounded-full"
-          style={{ background: TODAY.track }}
-        >
-          <div
-            className="h-full rounded-full transition-[width] duration-700 ease-out"
-            style={{ width: `${fiberPct}%`, background: TODAY.clay }}
-          />
-        </div>
-        <span className="font-mono text-xs whitespace-nowrap tabular-nums" style={{ color: TODAY.ink50 }}>
-          <b className="font-medium" style={{ color: TODAY.ink }}>
-            {fiberConsumed}
-          </b>
-          /{fiberTarget}g
-        </span>
+      <div className="mt-[18px] grid grid-cols-2 gap-[10px]">
+        <GoalCard
+          label="Protein"
+          consumed={proteinConsumed}
+          target={proteinTarget}
+          fill={TODAY.ink50}
+        />
+        <GoalCard label="Fiber" consumed={fiberConsumed} target={fiberTarget} fill={TODAY.clay} />
       </div>
     </div>
   );
 }
 
-/** Keeps centered labels from hanging off the card's edges. */
-function clampPct(value: number): number {
-  return Math.min(95, Math.max(5, value));
+/** One of the two figures flanking the gauge. The dot ties it to its arc slice. */
+function FlankStat({ label, value, dot }: { label: string; value: number; dot: string }) {
+  return (
+    <div className="flex w-[54px] shrink-0 flex-col items-center gap-[5px]">
+      <div className="flex items-center gap-[5px]">
+        <span style={{ width: 5, height: 5, borderRadius: "50%", background: dot }} />
+        <span
+          className="font-mono text-[9.5px] font-semibold tracking-[0.1em] uppercase"
+          style={{ color: TODAY.ink45 }}
+        >
+          {label}
+        </span>
+      </div>
+      <span className="text-[16px] font-bold tabular-nums" style={{ color: TODAY.ink }}>
+        {Math.round(value).toLocaleString()}
+      </span>
+      <span className="font-mono text-[9.5px] font-medium" style={{ color: TODAY.ink40 }}>
+        kcal
+      </span>
+    </div>
+  );
 }
 
-function segmentRadius(index: number, count: number): string {
-  if (count === 1) return "8px";
-  if (index === 0) return "8px 2px 2px 8px";
-  if (index === count - 1) return "2px 8px 8px 2px";
-  return "2px";
+/**
+ * A target to reach, not a limit to respect: the bar fills toward the goal
+ * and locks into an explicit "reached" state, so hitting it reads as a win
+ * rather than as an overshoot.
+ */
+function GoalCard({
+  label,
+  consumed,
+  target,
+  fill,
+}: {
+  label: string;
+  consumed: number;
+  target: number;
+  fill: string;
+}) {
+  const reached = target > 0 && consumed >= target;
+  const pct = target > 0 ? Math.min(1, consumed / target) * 100 : 0;
+
+  return (
+    <div style={{ background: TODAY.bg, borderRadius: 16 }} className="px-[14px] pt-[11px] pb-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[12.5px] font-semibold" style={{ color: TODAY.ink60 }}>
+          {label}
+        </span>
+        {reached && (
+          <span
+            className="flex size-[15px] items-center justify-center rounded-full"
+            style={{ background: TODAY.accent }}
+          >
+            <CheckIcon className="size-[10px]" strokeWidth={3.5} style={{ color: TODAY.ink }} />
+          </span>
+        )}
+      </div>
+
+      <div className="mt-[5px] font-mono text-[15px] tabular-nums">
+        <b className="font-semibold" style={{ color: TODAY.ink }}>
+          {consumed}
+        </b>
+        <span style={{ color: TODAY.ink45 }}>/{target}g</span>
+      </div>
+
+      <div
+        className="mt-[9px] h-[5px] overflow-hidden rounded-full"
+        style={{ background: TODAY.track }}
+      >
+        <div
+          className="h-full rounded-full transition-[width,background] duration-700 ease-out"
+          style={{ width: `${pct}%`, background: reached ? TODAY.accent : fill }}
+        />
+      </div>
+    </div>
+  );
 }

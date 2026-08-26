@@ -249,7 +249,8 @@ export function TodayDashboard() {
             <div {...revealProps(0)}>
               <DailyBudgetCard
                 caloriesConsumed={caloriesConsumed}
-                calorieTarget={calorieTarget}
+                bmr={targets.bmr}
+                targetDeficit={targets.calorieDeficit}
                 activeCalories={activeCalories}
                 proteinConsumed={proteinConsumed}
                 proteinTarget={targets.protein}
